@@ -20,6 +20,32 @@ pip install -e '.[dev]'
 cp .env.example .env
 ```
 
+### Start a new project
+
+From any existing supervisor installation, create an empty project with the
+supervisor checked out as a `supervisor/` Git submodule, a root `runbooks/`
+directory, a starter runbook, a root `.state/` ignore rule, an ignored local
+configuration file, and an installed virtual environment:
+
+```zsh
+supervisor init ~/Dev/my-new-project --python python3.11
+```
+
+The command refuses a non-empty destination and never overwrites an existing
+project. It uses `git@github.com:jakowicz/supervisor.git` by default; use
+`--supervisor-url <URL>` to select a fork or another remote. Use `--no-install`
+when creating the virtual environment and dependencies is not currently
+possible, then complete the install later from `<project>/supervisor`:
+
+```zsh
+python3.11 -m venv .venv
+./.venv/bin/python -m pip install --no-build-isolation -e '.[dev]'
+./.venv/bin/supervisor configure
+```
+
+Runtime evidence is deliberately stored at `<project>/.state/`; no operational
+`.state/` directory is created inside the reusable `supervisor/` submodule.
+
 Set `SUPERVISOR_REPO_ROOT` to the game checkout if invoking from another
 directory. Add worker command adapters only after verifying their credentials,
 permissions, and worktree handling.

@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import getpass
 import os
+import subprocess
 import tempfile
 from pathlib import Path
 
@@ -33,6 +34,39 @@ DEFAULTS = {
     "SUPERVISOR_OBSERVABILITY_ENVIRONMENT": "local",
     "LANGFUSE_BASE_URL": "http://127.0.0.1:3001",
 }
+
+DEFAULT_SUPERVISOR_URL = "git@github.com:jakowicz/supervisor.git"
+
+RUNBOOK_TEMPLATE = """---
+task_id: T001
+sequence: 1
+title: Describe one small, reviewable change
+browser_impact: none
+playwright_spec:
+---
+
+## Objective
+
+Describe the smallest complete outcome. State what is in scope and, equally
+important, what must not be changed.
+
+## Acceptance criteria
+
+- The intended behaviour is implemented and documented where it affects users or developers.
+- Focused automated tests cover the change and pass.
+- No unrelated refactors, network calls, or credentials are introduced.
+"""
+
+RUNBOOKS_README = """# Runbooks
+
+Put one Markdown runbook here for each small, independently reviewable task.
+Start with `TEMPLATE.md`, assign a unique task ID and sequence, and be precise
+about acceptance criteria. Then run it from `../supervisor`:
+
+```zsh
+./.venv/bin/emberhold-supervisor --runbook ../runbooks/T001.md
+```
+"""
 
 
 def _prompt(label: str, default: str, *, secret: bool = False) -> str:
@@ -121,14 +155,92 @@ def configure(path: Path) -> None:
     print("Next: run `emberhold-supervisor --task-id <ID>` or `emberhold-dashboard`.")
 
 
+def _run(command: list[str], *, cwd: Path | None = None) -> None:
+    try:
+        subprocess.run(command, cwd=cwd, check=True)
+    except FileNotFoundError as error:
+        raise RuntimeError(f"Required command was not found: {command[0]}") from error
+    except subprocess.CalledProcessError as error:
+        rendered = " ".join(command)
+        raise RuntimeError(f"Command failed ({error.returncode}): {rendered}") from error
+
+
+def _append_gitignore(path: Path, entry: str) -> None:
+    existing = path.read_text(encoding="utf-8") if path.is_file() else ""
+    if entry in {line.strip() for line in existing.splitlines()}:
+        return
+    newline = "" if not existing or existing.endswith("\n") else "\n"
+    path.write_text(f"{existing}{newline}{entry}\n", encoding="utf-8")
+
+
+def initialise_project(
+    project_root: Path,
+    *,
+    supervisor_url: str = DEFAULT_SUPERVISOR_URL,
+    python: str = "python3",
+    install: bool = True,
+) -> None:
+    """Create an empty Git project ready to run scoped supervisor runbooks."""
+
+    project_root = project_root.expanduser().resolve()
+    if project_root.exists() and any(project_root.iterdir()):
+        raise ValueError(f"Project directory is not empty: {project_root}")
+    project_root.mkdir(parents=True, exist_ok=True)
+
+    print(f"Initialising Git project: {project_root}")
+    _run(["git", "init"], cwd=project_root)
+    print(f"Adding supervisor submodule: {supervisor_url}")
+    _run(["git", "submodule", "add", supervisor_url, "supervisor"], cwd=project_root)
+
+    runbooks = project_root / "runbooks"
+    runbooks.mkdir(exist_ok=True)
+    (runbooks / "README.md").write_text(RUNBOOKS_README, encoding="utf-8")
+    (runbooks / "TEMPLATE.md").write_text(RUNBOOK_TEMPLATE, encoding="utf-8")
+    _append_gitignore(project_root / ".gitignore", "/.state/")
+
+    example = project_root / "supervisor" / ".env.example"
+    config = project_root / "supervisor" / ".env"
+    if example.is_file() and not config.exists():
+        config.write_text(example.read_text(encoding="utf-8"), encoding="utf-8")
+        config.chmod(0o600)
+
+    if install:
+        venv = project_root / "supervisor" / ".venv"
+        print(f"Creating virtual environment with {python}")
+        _run([python, "-m", "venv", str(venv)], cwd=project_root)
+        venv_python = venv / "bin" / "python"
+        print("Installing supervisor dependencies")
+        _run([str(venv_python), "-m", "pip", "install", "--no-build-isolation", "-e", ".[dev]"], cwd=project_root / "supervisor")
+
+    print("Project ready.")
+    print(f"1. Edit {runbooks / 'TEMPLATE.md'} and save it as your first task runbook.")
+    print(f"2. Run: cd {project_root / 'supervisor'} && ./.venv/bin/supervisor configure")
+    print("3. Set explicit worker commands and write permissions before running a task.")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Configure a project-local evidence-gated supervisor.")
     commands = parser.add_subparsers(dest="command", required=True)
     configure_parser = commands.add_parser("configure", help="Interactively create or update an ignored .env configuration file.")
     configure_parser.add_argument("--config", type=Path, default=Path(".env"), help="Configuration file to write (default: .env).")
+    init_parser = commands.add_parser("init", help="Create an empty Git project with the supervisor submodule, runbooks, state ignore, and local install.")
+    init_parser.add_argument("project", type=Path, help="New or empty project directory to initialise.")
+    init_parser.add_argument("--supervisor-url", default=DEFAULT_SUPERVISOR_URL, help="Git URL for the supervisor submodule.")
+    init_parser.add_argument("--python", default="python3", help="Python interpreter used to create the project virtual environment.")
+    init_parser.add_argument("--no-install", action="store_true", help="Create files and submodule but skip virtualenv and dependency installation.")
     arguments = parser.parse_args()
     if arguments.command == "configure":
         configure(arguments.config.expanduser().resolve())
+    if arguments.command == "init":
+        try:
+            initialise_project(
+                arguments.project,
+                supervisor_url=arguments.supervisor_url,
+                python=arguments.python,
+                install=not arguments.no_install,
+            )
+        except (RuntimeError, ValueError) as error:
+            parser.error(str(error))
 
 
 if __name__ == "__main__":
