@@ -4,7 +4,7 @@ from supervisor.runbooks import load_task
 
 
 def test_d005_runbook_loads_the_persistence_contract():
-    root = Path(__file__).resolve().parents[3]
+    root = Path(__file__).resolve().parents[2]
     task = load_task(root / "runbooks" / "D005.md")
     assert task.task_id == "D005"
     assert task.sequence == 5
@@ -14,7 +14,7 @@ def test_d005_runbook_loads_the_persistence_contract():
 
 
 def test_every_installed_runbook_loads_and_matches_its_filename():
-    root = Path(__file__).resolve().parents[3]
+    root = Path(__file__).resolve().parents[2]
     for path in (root / "runbooks").glob("D*.md"):
         task = load_task(path)
         assert task.task_id == path.stem
