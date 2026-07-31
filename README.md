@@ -34,7 +34,10 @@ supervisor configure
 It writes an ignored, mode-600 `.env` and prompts for project paths, enabled
 agents and their commands/models, total retry attempts, dashboard preference,
 Git policy, timeouts, and optional Langfuse credentials. The dashboard chooses
-a free localhost port when its preferred port is occupied.
+a free localhost port when its preferred port is occupied. When installed as
+`automation/supervisor`, the default database path is
+`<project-root>/.state/supervisor.sqlite3`, so project evidence remains outside
+the reusable submodule.
 
 ### Qwen and Codex adapters
 
@@ -118,7 +121,7 @@ visual-review command has accepted the evidence.
    user review. A successful Qwen or OpenHands implementation always receives
    a separate Codex final verifier/fixer pass before deterministic QA begins.
 
-Evidence and run history are stored in `.state/supervisor.sqlite3`; screenshots
+Evidence and run history are stored in `<project-root>/.state/supervisor.sqlite3`; screenshots
 belong in `../../artifacts/qa/<task-id>/`.
 
 The same SQLite database also holds durable task checkpoints. During a coding
@@ -253,7 +256,7 @@ When a run starts, the terminal immediately prints its run ID, current stage,
 route decision, and its live log location. Inspect an active or completed run:
 
 ```bash
-tail -f .state/live/task-<task-id-lower>-run-<run-number>-stage-00-agent-supervisor-<run-id>.log
+tail -f ../../.state/live/task-<task-id-lower>-run-<run-number>-stage-00-agent-supervisor-<run-id>.log
 emberhold-reports events <run-id>
 ```
 
@@ -263,10 +266,10 @@ their complete captured stdout/stderr in the final event evidence. Each
 completed stage also writes its own human-readable raw-output log:
 
 ```text
-.state/live/task-d006-run-11-stage-01-agent-prepare-<run-id>.log
-.state/live/task-d006-run-11-stage-02-agent-qwen-<run-id>.log
-.state/live/task-d006-run-11-stage-03-agent-test-<run-id>.log
-.state/live/task-d006-run-11-stage-00-agent-supervisor-<run-id>.log
+../../.state/live/task-d006-run-11-stage-01-agent-prepare-<run-id>.log
+../../.state/live/task-d006-run-11-stage-02-agent-qwen-<run-id>.log
+../../.state/live/task-d006-run-11-stage-03-agent-test-<run-id>.log
+../../.state/live/task-d006-run-11-stage-00-agent-supervisor-<run-id>.log
 ```
 
 Browse the SQLite history interactively, selecting a task, run, then stage:
@@ -330,7 +333,7 @@ The importer never changes SQLite or the existing files. It sends structured
 stage results plus complete raw evidence to the local Langfuse project when
 `SUPERVISOR_OBSERVABILITY_RAW_LOG_MAX_CHARS=-1` (the local default). It also
 turns agent JSONL into nested generation, tool, and final-result observations
-with available token usage. Full logs and artifacts remain in `.state/` too.
+with available token usage. Full logs and artifacts remain in `<project-root>/.state/` too.
 Use a positive character limit if you later want compact remote telemetry.
 
 ## Production execution policy
@@ -349,7 +352,7 @@ Use a positive character limit if you later want compact remote telemetry.
 - SQLite keeps the full event log, including stage, worker, configured model,
   attempt, route, summary, structured result, logs, and screenshot paths.
   Each completed run also writes a skim-friendly agent/progression summary to
-  `.state/reports/<run-id>.md`.
+  `<project-root>/.state/reports/<run-id>.md`.
 
 Run D006 with explicit acceptance criteria:
 

@@ -117,10 +117,10 @@ def metrics(connection: sqlite3.Connection) -> dict:
 
 
 def run_summaries(connection: sqlite3.Connection) -> list[dict]:
-    rows = connection.execute("SELECT payload FROM task_runs ORDER BY rowid DESC").fetchall()
+    rows = connection.execute("SELECT rowid AS ledger_rowid, payload FROM task_runs ORDER BY rowid DESC").fetchall()
     return [
         {
-            "run_id": run["run_id"],
+            "run_id": run.get("run_id", f"legacy-row-{row['ledger_rowid']}"),
             "task_id": run["task"]["task_id"],
             "title": run["task"]["title"],
             "status": run["status"],
@@ -128,7 +128,7 @@ def run_summaries(connection: sqlite3.Connection) -> list[dict]:
             "created_at": run["created_at"],
         }
         for row in rows
-        for run in [json.loads(row[0])]
+        for run in [json.loads(row["payload"])]
     ]
 
 

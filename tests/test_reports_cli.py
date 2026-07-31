@@ -1,8 +1,9 @@
 import json
+import sqlite3
 from pathlib import Path
 
 from supervisor.models import NextStep, RunEvent, Status, Task, TaskRun, WorkerResult
-from supervisor.reports_cli import load_run, open_database, show_task_state
+from supervisor.reports_cli import list_runs, load_run, open_database, show_task_state
 from supervisor.storage import RunStore
 
 
@@ -37,3 +38,18 @@ def test_reports_cli_shows_durable_task_state(tmp_path: Path, capsys):
     output = capsys.readouterr().out
     assert "D006 durable task state" in output
     assert "Agent last requested: write_file." in output
+
+
+def test_list_runs_tolerates_a_legacy_payload_without_run_id(tmp_path: Path, capsys):
+    database = tmp_path / "supervisor.sqlite3"
+    store = RunStore(database)
+    store._connection.execute(
+        "INSERT INTO task_runs (task_id, route, status, payload, created_at) VALUES (?, ?, ?, ?, ?)",
+        ("D001", "accepted", "pass", json.dumps({"status": "pass", "events": []}), "2026-08-01T00:00:00Z"),
+    )
+    store._connection.commit()
+    store._connection.row_factory = sqlite3.Row
+    list_runs(store._connection, None, 10)
+    store.close()
+
+    assert "legacy-row-1" in capsys.readouterr().out

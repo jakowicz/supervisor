@@ -29,7 +29,7 @@ def open_database(path: Path) -> sqlite3.Connection:
 
 
 def list_runs(connection: sqlite3.Connection, task_id: str | None, limit: int) -> None:
-    query = "SELECT rowid, task_id, route, status, created_at, payload FROM task_runs"
+    query = "SELECT rowid AS ledger_rowid, task_id, route, status, created_at, payload FROM task_runs"
     parameters: list[Any] = []
     if task_id:
         query += " WHERE task_id = ?"
@@ -44,7 +44,8 @@ def list_runs(connection: sqlite3.Connection, task_id: str | None, limit: int) -
     for row in rows:
         payload = json.loads(row["payload"])
         mode = "dry-run" if any("Dry-run" in event.get("summary", "") for event in payload.get("events", [])) else "real"
-        print(f"{payload['run_id']:36}  {row['task_id']:8}  {mode:10}  {row['status']:22}  {row['created_at']}")
+        run_id = payload.get("run_id", f"legacy-row-{row['ledger_rowid']}")
+        print(f"{run_id:36}  {row['task_id']:8}  {mode:10}  {row['status']:22}  {row['created_at']}")
 
 
 def active_live_runs(path: Path) -> list[tuple[str, str, str]]:
@@ -198,7 +199,10 @@ def browse(connection: sqlite3.Connection, path: Path) -> None:
     rows = connection.execute(
         "SELECT payload FROM task_runs WHERE task_id = ? ORDER BY rowid DESC", (task_id,)
     ).fetchall()
-    runs = [json.loads(row["payload"]) for row in rows]
+    # Early experimental records did not include a run_id in the payload and
+    # cannot be opened by the run-detail interface. Keep them listable in the
+    # non-interactive report, but omit them from this selector.
+    runs = [payload for row in rows if (payload := json.loads(row["payload"])).get("run_id")]
     print(f"\n{task_id} runs:")
     for index, run in enumerate(runs, start=1):
         print(f"  {index}. {run['run_id']} · {run['status']} · {run['created_at']}")

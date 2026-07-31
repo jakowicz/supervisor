@@ -14,6 +14,15 @@ def test_dashboard_metrics_handles_empty_database():
     assert "href='/logs'" in render(data)
 
 
+def test_dashboard_summaries_tolerate_a_legacy_payload_without_run_id():
+    connection = sqlite3.connect(":memory:")
+    connection.row_factory = sqlite3.Row
+    connection.execute("CREATE TABLE task_runs (payload TEXT)")
+    connection.execute("INSERT INTO task_runs (payload) VALUES (?)", ('{"task":{"task_id":"D001","title":"Legacy"},"status":"pass","created_at":"now","events":[]}',))
+
+    assert run_summaries(connection)[0]["run_id"] == "legacy-row-1"
+
+
 def test_dashboard_process_detection(monkeypatch):
     class Completed:
         returncode = 0
