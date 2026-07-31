@@ -13,7 +13,7 @@ return a structured `environment_failure` until an explicit command is configure
 ## Setup
 
 ```bash
-cd automation/supervisor
+cd supervisor
 python3.11 -m venv .venv
 source .venv/bin/activate
 pip install -e '.[dev]'
@@ -35,7 +35,7 @@ It writes an ignored, mode-600 `.env` and prompts for project paths, enabled
 agents and their commands/models, total retry attempts, dashboard preference,
 Git policy, timeouts, and optional Langfuse credentials. The dashboard chooses
 a free localhost port when its preferred port is occupied. When installed as
-`automation/supervisor`, the default database path is
+`supervisor`, the default database path is
 `<project-root>/.state/supervisor.sqlite3`, so project evidence remains outside
 the reusable submodule.
 
@@ -256,7 +256,7 @@ When a run starts, the terminal immediately prints its run ID, current stage,
 route decision, and its live log location. Inspect an active or completed run:
 
 ```bash
-tail -f ../../.state/live/task-<task-id-lower>-run-<run-number>-stage-00-agent-supervisor-<run-id>.log
+tail -f ../.state/live/task-<task-id-lower>-run-<run-number>-stage-00-agent-supervisor-<run-id>.log
 emberhold-reports events <run-id>
 ```
 
@@ -266,10 +266,10 @@ their complete captured stdout/stderr in the final event evidence. Each
 completed stage also writes its own human-readable raw-output log:
 
 ```text
-../../.state/live/task-d006-run-11-stage-01-agent-prepare-<run-id>.log
-../../.state/live/task-d006-run-11-stage-02-agent-qwen-<run-id>.log
-../../.state/live/task-d006-run-11-stage-03-agent-test-<run-id>.log
-../../.state/live/task-d006-run-11-stage-00-agent-supervisor-<run-id>.log
+../.state/live/task-d006-run-11-stage-01-agent-prepare-<run-id>.log
+../.state/live/task-d006-run-11-stage-02-agent-qwen-<run-id>.log
+../.state/live/task-d006-run-11-stage-03-agent-test-<run-id>.log
+../.state/live/task-d006-run-11-stage-00-agent-supervisor-<run-id>.log
 ```
 
 Browse the SQLite history interactively, selecting a task, run, then stage:

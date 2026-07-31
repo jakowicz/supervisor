@@ -260,7 +260,7 @@ architecture, design, or progress. If no documentation change is needed, state
 the reviewed files and explain why.
 
 For browser-impacting work, create or update a task-specific Playwright spec in
-`automation/supervisor/browser/tests/changes/`, list it in `browser_coverage`,
+`supervisor/browser/tests/changes/`, list it in `browser_coverage`,
 and revise stale checks. Keep `tests/smoke/` short and stable. For domain-only
 work, explain in `browser_coverage` why no task-specific browser spec changed.
 """

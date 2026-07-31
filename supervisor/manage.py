@@ -12,13 +12,13 @@ from dotenv import dotenv_values
 
 
 DEFAULTS = {
-    # The intended installation is a submodule at `automation/supervisor`.
+    # The intended installation is a submodule at the project-root `supervisor`.
     # This resolves to the containing project while still remaining editable.
-    "SUPERVISOR_REPO_ROOT": "../..",
+    "SUPERVISOR_REPO_ROOT": "..",
     # Operational evidence belongs to the controlled project's root, not the
     # reusable submodule. This keeps a supervisor upgrade from owning or
     # obscuring a project's execution history.
-    "SUPERVISOR_DATABASE_PATH": "../../.state/supervisor.sqlite3",
+    "SUPERVISOR_DATABASE_PATH": "../.state/supervisor.sqlite3",
     "SUPERVISOR_QWEN_ATTEMPTS": "1",
     "SUPERVISOR_OPENHANDS_ATTEMPTS": "1",
     "SUPERVISOR_CODEX_ATTEMPTS": "3",
