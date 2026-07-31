@@ -1,0 +1,5 @@
+# A lightweight local tag; it reuses qwen3-coder-next weights rather than
+# downloading or duplicating the 80B model. The 32K context is ample for a
+# single supervisor task and avoids allocating a 262K KV cache on the GPU.
+FROM qwen3-coder-next:latest
+PARAMETER num_ctx 32768

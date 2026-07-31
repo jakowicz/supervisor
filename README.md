@@ -1,0 +1,364 @@
+# Supervisor — evidence-gated LangGraph task orchestration
+
+This package orchestrates one small, reviewable Emberhold task at a time. It
+does not run providers by default. Instead, it has safe worker adapters which
+return a structured `environment_failure` until an explicit command is configured.
+
+## Prerequisites
+
+- Python 3.10 or newer (the current machine's Python 3.9.6 is too old)
+- Flutter on `PATH`
+- Node/npm only when browser QA is enabled
+
+## Setup
+
+```bash
+cd automation/supervisor
+python3.11 -m venv .venv
+source .venv/bin/activate
+pip install -e '.[dev]'
+cp .env.example .env
+```
+
+Set `SUPERVISOR_REPO_ROOT` to the game checkout if invoking from another
+directory. Add worker command adapters only after verifying their credentials,
+permissions, and worktree handling.
+
+For a reusable project setup, run the interactive configuration CLI after the
+editable install:
+
+```bash
+supervisor configure
+```
+
+It writes an ignored, mode-600 `.env` and prompts for project paths, enabled
+agents and their commands/models, total retry attempts, dashboard preference,
+Git policy, timeouts, and optional Langfuse credentials. The dashboard chooses
+a free localhost port when its preferred port is occupied.
+
+### Qwen and Codex adapters
+
+The included adapters translate Qwen Code and Codex CLI output into the required
+`WorkerResult` JSON object. Neither runs until you explicitly set
+`SUPERVISOR_ALLOW_AUTONOMOUS_WRITES=true`; this prevents an accidental
+supervisor invocation from changing the shared checkout.
+
+Add these lines to `.env` when ready:
+
+```dotenv
+QWEN_CODER_COMMAND=./.venv/bin/python scripts/qwen_worker.py {task_file}
+OPENHANDS_COMMAND=./.venv/bin/python scripts/openhands_worker.py {task_file}
+CODEX_COMMAND=./.venv/bin/python scripts/codex_worker.py {task_file}
+SUPERVISOR_ALLOW_AUTONOMOUS_WRITES=true
+```
+
+`qwen_worker.py` runs Qwen in its sandboxed non-interactive mode, with the
+project's Codebase Memory MCP available for repository-aware discovery. It
+uses Qwen's JSON-schema output mode so a readable agent summary cannot bypass
+the supervisor's required `WorkerResult` evidence contract.
+`openhands_worker.py` runs OpenHands headlessly with its LLM security-approval
+mode. When `LLM_MODEL` uses `ollama/...`, it converts the shared OpenAI-compatible
+`LLM_BASE_URL` ending in `/v1` to Ollama's native root URL before OpenHands runs.
+The Codex adapter uses `codex exec` with `workspace-write`, a strict
+schema-enforced final response, and `--skip-git-repo-check` because this checkout
+currently has no Git metadata. All three are constrained to
+`SUPERVISOR_REPO_ROOT`; the Codex adapter does not use danger-full-access or
+bypass the Codex sandbox.
+
+To use the locally loaded Ollama model for both Qwen and OpenHands, set:
+
+```dotenv
+QWEN_MODEL=qwen3-coder-next:latest
+LLM_MODEL=ollama/qwen3-coder-next:latest
+LLM_BASE_URL=http://127.0.0.1:11434/v1
+LLM_API_KEY=ollama
+```
+
+The same shared `/v1` URL is correct: Qwen uses the OpenAI-compatible endpoint,
+while the OpenHands adapter automatically removes that suffix for LiteLLM's native
+Ollama provider. Do not create a second OpenHands-specific URL variable.
+
+The supervisor keeps Qwen's normal model/context settings. If you ever need a
+lower-context diagnostic tag, the included optional tag reuses the installed
+weights rather than downloading another model:
+
+```zsh
+ollama create qwen3-coder-next-32k -f models/qwen3-coder-next-32k.Modelfile
+```
+
+The worker fails over after ten minutes with no model or tool output. Adjust
+`SUPERVISOR_QWEN_IDLE_TIMEOUT_SECONDS` only when a live Qwen log shows genuine
+ongoing output.
+
+## Run a safe graph check
+
+```bash
+emberhold-supervisor --task-id T01 --title "Inventory reconciliation" --dry-run
+pytest
+```
+
+The dry run exercises the complete graph without running Flutter, a browser, or
+an external coding provider. It ends at `needs_user_review` because no human or
+visual-review command has accepted the evidence.
+
+## Enable real workers incrementally
+
+1. Configure `QWEN_CODER_COMMAND`; the included adapter accepts `{task_file}`
+   and emits exactly one `WorkerResult` JSON object.
+2. Run a task. A successful Qwen/OpenHands pass first receives Codex final
+   verification and repair; then the test worker executes `flutter analyze`,
+   `flutter test`, and `flutter build web --release`.
+3. Configure `BROWSER_QA_COMMAND` to run Playwright and emit `WorkerResult`,
+   including screenshot paths and browser logs.
+4. Configure `VISUAL_REVIEW_COMMAND` to perform independent review. A task is
+   accepted only when it returns `status: "pass"`.
+5. The included OpenHands and Codex adapters are ready once their CLIs are
+   authenticated/configured. The graph routes environment failures to
+   OpenHands, repeated or complex failures to Codex, and risky/unclear tasks to
+   user review. A successful Qwen or OpenHands implementation always receives
+   a separate Codex final verifier/fixer pass before deterministic QA begins.
+
+Evidence and run history are stored in `.state/supervisor.sqlite3`; screenshots
+belong in `../../artifacts/qa/<task-id>/`.
+
+The same SQLite database also holds durable task checkpoints. During a coding
+run the supervisor records the active process, Qwen session ID, last tool
+activity, changed-file fingerprint, and the next pipeline stage. If a run is
+interrupted, invoke the same task again: it resumes the saved Qwen session and
+continues at the unfinished stage rather than reimplementing completed work.
+Only one live supervisor may claim a task at a time. Once a task is accepted at
+a recorded Git commit, a repeat invocation is a safe no-op; create a new task
+ID for additional scope.
+
+If an interrupted Qwen stage already emitted a valid final `WorkerResult` in
+its raw live log, the next invocation recovers that result and begins with the
+independent test stage. It does not ask a coding agent to rediscover or rewrite
+the task. An incomplete newest retry log is skipped in favour of the latest
+completed Qwen result; test/browser/audit gates still decide whether the work
+is actually accepted.
+
+When Langfuse observability is enabled, each completed stage is exported with
+its full evidence and Qwen additionally emits short live checkpoint events as
+new output arrives. Those live events are flushed while Qwen is still running;
+they include the current continuation summary and a bounded new-output excerpt.
+
+## Inspecting reports
+
+`emberhold-reports` opens the SQLite database read-only:
+
+```bash
+emberhold-reports list
+emberhold-reports list --task D006
+emberhold-reports task-state D006
+emberhold-reports show <run-id>
+emberhold-reports events <run-id>
+emberhold-reports export <run-id> --output /private/tmp/d006-run.json
+```
+
+The supervisor prints a short completion handoff by default; full worker
+transcripts remain in the stage logs and SQLite rather than being repeated in
+the terminal. Add `--output-format json` only when a script needs the complete
+machine-readable run payload.
+
+## Browser QA and metrics dashboard
+
+Install Playwright once, then its Chromium browser:
+
+```bash
+cd browser
+npm install
+npx playwright install chromium
+```
+
+The configured browser worker serves Flutter's release web build locally, checks
+that the rendered Flutter shell is present at desktop/mobile viewports, captures
+screenshots, and fails on browser console/page errors. Flutter widget tests
+remain responsible for semantic tab/navigation coverage because the current web
+renderer exposes the game UI through a canvas rather than accessible DOM text.
+Evidence is saved below `artifacts/qa/<task-id>/`.
+
+Every task runs `browser/tests/smoke/`. Browser-impacting tasks must add or
+update a targeted spec under `browser/tests/changes/`, declare it with
+`--playwright-spec`, and explain changed coverage in their completion report.
+On task sequences 5, 10, 15, and so on, the browser worker runs the whole suite;
+otherwise it runs smoke plus the task-specific specs. Domain-only tasks record
+why no browser spec changed.
+
+## Runbooks
+
+The source batch is split into one immutable task contract per file under
+`../../runbooks/`. The supervisor loads it automatically by ID, so there is no
+need to retype the objective or acceptance criteria:
+
+```bash
+emberhold-supervisor --task-id D005
+```
+
+Or pass an explicit task file when working outside the standard set:
+
+```bash
+emberhold-supervisor --runbook ../../runbooks/D005.md
+```
+
+Run an installed range in sequence with one shared worktree and one model at a
+time:
+
+```bash
+emberhold-supervisor --task-range D007-D010
+```
+
+The batch starts D008 only after D007 is accepted. This prevents an unfinished
+or unreviewed task from becoming the implicit baseline for later work. For a
+known-independent batch, `--continue-on-nonpass` explicitly permits the next
+task after a failure or review stop.
+
+Each runbook declares its sequence, browser-impact policy, and targeted
+Playwright spec. Do not override those fields at the command line: edit and
+review the runbook first so the stored task report remains auditable.
+
+## Agents and stages
+
+The supervisor is deliberately a small team with separate implementation and
+verification responsibilities. A passing coding-agent response never accepts
+its own work.
+
+| Name in logs | What it is | Used for |
+| --- | --- | --- |
+| **Qwen3 Coder** (`qwen`) | Qwen Code CLI, normally configured to use the local `qwen3-coder-next` Ollama model. | Primary implementation attempt. |
+| **OpenHands** (`openhands`) | OpenHands headless CLI, configured with the selected local/remote model. | One fallback implementation attempt if Qwen exhausts its retry budget. |
+| **Codex** (`codex`) | Codex CLI in workspace-write sandbox mode. | Up to three fallback implementation/repair attempts after OpenHands. A successful fallback Codex implementation proceeds directly to deterministic QA. |
+| **Codex final verifier/fixer** (`codex_final`) | The same Codex CLI, invoked with a verification-and-repair brief. | Mandatory after a successful Qwen or OpenHands implementation. It checks the actual worktree against every runbook criterion, fixes demonstrated gaps, and retries up to three times if it cannot finish. |
+| **Independent Flutter test worker** (`test`) | Deterministic local Flutter commands, not an LLM. | Runs `flutter analyze`, `flutter test`, and `flutter build web --release` after a coding pass. |
+| **Browser QA worker** (`browser`) | Local web server plus Playwright Chromium tests at desktop and mobile viewports. | Runs stable smoke tests, task-specific browser checks, captures screenshots, and fails on page/console errors. Every fifth task sequence runs the full suite. |
+| **Visual QA reviewer** (`visual_review`) | Optional independent visual-review command. | Reviews visual evidence when configured; a missing reviewer requests user review rather than silently accepting UI work. |
+| **Completion-contract auditor** (`completion_audit`) | Deterministic policy check, not an LLM. | Verifies that every acceptance criterion has evidence, documentation was considered, required browser coverage exists, and limitations are declared. |
+| **Git baseline guard** (`prepare`) | Deterministic Git preflight. | When auto-publishing is enabled, requires a clean starting worktree so the final commit belongs only to this task. |
+| **Git publisher** (`git_publish`) | Deterministic Git step. | After every validation gate passes, optionally commits and pushes the task according to `SUPERVISOR_AUTO_COMMIT` and `SUPERVISOR_AUTO_PUSH`. |
+
+The coding fallback order is Qwen (one total attempt), then OpenHands (one),
+then Codex (three). When Qwen or OpenHands succeeds, the route is
+`qwen|openhands → codex_final → test → browser → visual_review → completion_audit`.
+When fallback Codex succeeds, it uses
+`codex → test → browser → visual_review → completion_audit` and does not run a
+second, redundant Codex review. Test/browser/visual infrastructure failures
+pause for review rather than using up a coding-agent retry.
+
+When `SUPERVISOR_AUTO_COMMIT=false`, the Git publisher records that no commit
+was created but still accepts a task once all implementation and QA gates pass.
+This lets local and mock task ranges continue without granting the supervisor
+Git-write authority. Enable auto-commit only when the clean-worktree preflight
+can safely attribute the resulting commit to one task.
+
+When a run starts, the terminal immediately prints its run ID, current stage,
+route decision, and its live log location. Inspect an active or completed run:
+
+```bash
+tail -f .state/live/task-<task-id-lower>-run-<run-number>-stage-00-agent-supervisor-<run-id>.log
+emberhold-reports events <run-id>
+```
+
+The detailed event report is persisted when the run finishes. The live log
+records stage transitions while a worker is running; the individual CLIs keep
+their complete captured stdout/stderr in the final event evidence. Each
+completed stage also writes its own human-readable raw-output log:
+
+```text
+.state/live/task-d006-run-11-stage-01-agent-prepare-<run-id>.log
+.state/live/task-d006-run-11-stage-02-agent-qwen-<run-id>.log
+.state/live/task-d006-run-11-stage-03-agent-test-<run-id>.log
+.state/live/task-d006-run-11-stage-00-agent-supervisor-<run-id>.log
+```
+
+Browse the SQLite history interactively, selecting a task, run, then stage:
+
+```bash
+emberhold-reports browse
+```
+
+Or print all preserved raw output for one completed run:
+
+```bash
+emberhold-reports events <run-id> --raw
+```
+
+After the completion audit the Git publisher can commit, then push, only when
+`SUPERVISOR_AUTO_COMMIT=true` and `SUPERVISOR_AUTO_PUSH=true`. Before agents
+start, it requires a clean Git worktree; therefore the final non-empty diff is
+task-only. It then checks the diff and publishes only after every QA gate.
+Use a dedicated worktree for each task when multiple tasks may run at once.
+
+Start the read-only Kiln Ledger dashboard from the supervisor directory:
+
+```bash
+emberhold-dashboard
+```
+
+Open `http://127.0.0.1:8765` to view accepted/review outcomes, worker load,
+failure categories, average stages per run, and recent agent-routing traces.
+Use the **Evidence archive** navigation link (or open
+`http://127.0.0.1:8765/logs`) to choose a task, run, and stage, then review
+the complete locally stored raw output.
+
+## Local Langfuse observability
+
+Kiln Ledger remains the authoritative local archive for complete raw
+stdout/stderr and evidence files. Langfuse adds a searchable OpenTelemetry
+trace tree alongside it: task = Langfuse session, one supervisor execution =
+trace, and every worker/QA/audit stage = nested observation.
+
+Start the fully local Langfuse stack (Postgres, ClickHouse, Redis, and MinIO
+remain inside Docker volumes on this machine):
+
+```bash
+cd observability
+./setup-local.sh
+```
+
+The bootstrap creates an **Emberhold Supervisor** project and local API keys,
+then enables telemetry in `.env`. Sign in at `http://127.0.0.1:3001` as
+`local@emberhold.invalid`; the generated password is stored only in
+`observability/.env` as `LANGFUSE_INIT_USER_PASSWORD`. This explicit bootstrap
+keeps all credentials and telemetry on the local machine.
+
+Backfill the existing SQLite history after enabling it:
+
+```bash
+emberhold-observability-import
+```
+
+The importer never changes SQLite or the existing files. It sends structured
+stage results plus complete raw evidence to the local Langfuse project when
+`SUPERVISOR_OBSERVABILITY_RAW_LOG_MAX_CHARS=-1` (the local default). It also
+turns agent JSONL into nested generation, tool, and final-result observations
+with available token usage. Full logs and artifacts remain in `.state/` too.
+Use a positive character limit if you later want compact remote telemetry.
+
+## Production execution policy
+
+- Qwen receives one total coding attempt.
+- OpenHands receives one total coding attempt after Qwen is exhausted.
+- Codex receives up to three total coding attempts after OpenHands is exhausted.
+- Every successful coding pass runs `flutter analyze`, `flutter test`, and
+  `flutter build web --release`, then browser QA and visual review.
+- A missing/broken test, browser, or visual-review environment stops for user
+  repair rather than consuming coding-agent budget.
+- A deterministic completion-contract audit blocks acceptance unless the final
+  coding agent reports evidence for every acceptance criterion, README/docs
+  review/update decisions, exact checks, and known limitations. Independent
+  test, browser, and visual stages remain required in addition to this report.
+- SQLite keeps the full event log, including stage, worker, configured model,
+  attempt, route, summary, structured result, logs, and screenshot paths.
+  Each completed run also writes a skim-friendly agent/progression summary to
+  `.state/reports/<run-id>.md`.
+
+Run D006 with explicit acceptance criteria:
+
+```bash
+./.venv/bin/emberhold-supervisor \
+  --task-id D006 \
+  --title "Trusted local time and background-safe timers" \
+  --objective "Implement only D006 from GWEN_DETAILED_RUNBOOK_001_010.md." \
+  --acceptance "Domain callers use injected wall-clock and monotonic-time interfaces." \
+  --acceptance "Typed time anomalies cover material backward and extreme forward jumps." \
+  --acceptance "No resource production or construction UI is added."
+```

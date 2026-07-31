@@ -1,0 +1,7 @@
+{
+  "name": "emberhold-browser-qa",
+  "private": true,
+  "devDependencies": {
+    "@playwright/test": "^1.58.0"
+  }
+}

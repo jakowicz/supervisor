@@ -1,0 +1,22 @@
+# Local project configuration and credentials
+.env
+observability/.env
+
+# Per-project operational evidence. These files intentionally stay on disk when
+# the supervisor is upgraded or checked out as a Git submodule.
+.state/
+*.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
+
+# Local runtimes and test by-products
+.venv/
+.pytest_cache/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# JavaScript dependencies and generated browser evidence
+browser/node_modules/
+browser/playwright-report.json
+browser/test-results/
