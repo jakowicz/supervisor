@@ -7,6 +7,7 @@ import getpass
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 from urllib.error import URLError
@@ -191,6 +192,31 @@ def _run(command: list[str], *, cwd: Path | None = None) -> None:
         raise RuntimeError(f"Command failed ({error.returncode}): {rendered}") from error
 
 
+def _git_output(command: list[str], *, cwd: Path) -> str:
+    try:
+        result = subprocess.run(command, cwd=cwd, text=True, capture_output=True, check=True)
+    except (FileNotFoundError, subprocess.CalledProcessError) as error:
+        raise RuntimeError("The Supervisor checkout is not a usable Git repository.") from error
+    return result.stdout.strip()
+
+
+def update_workspace(start: Path | None = None) -> Path:
+    """Fast-forward the invoked Supervisor checkout and refresh its CLI tools."""
+
+    package_root = (start or Path(__file__).resolve().parents[1]).resolve()
+    repository_root = Path(_git_output(["git", "rev-parse", "--show-toplevel"], cwd=package_root))
+    if _git_output(["git", "status", "--porcelain"], cwd=repository_root):
+        raise RuntimeError(
+            f"Refusing to update a Supervisor checkout with local changes: {repository_root}. "
+            "Commit, stash, or discard those changes first."
+        )
+    print(f"Updating Supervisor tools in {repository_root}")
+    _run(["git", "pull", "--ff-only", "origin", "main"], cwd=repository_root)
+    _run([sys.executable, "-m", "pip", "install", "--no-build-isolation", "-e", ".[dev]"], cwd=repository_root)
+    print("Supervisor tools are up to date.")
+    return repository_root
+
+
 def choose_python(requested: str | None = None) -> str:
     """Find a Python 3.10+ interpreter on PATH, or validate an override."""
 
@@ -325,7 +351,7 @@ def initialise_project(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Configure a project-local evidence-gated supervisor.")
+    parser = argparse.ArgumentParser(description="Configure and maintain an evidence-gated supervisor.")
     commands = parser.add_subparsers(dest="command", required=True)
     configure_parser = commands.add_parser("configure", help="Interactively create or update an ignored .env configuration file.")
     configure_parser.add_argument("--config", type=Path, default=Path(".env"), help="Configuration file to write (default: .env).")
@@ -336,9 +362,15 @@ def main() -> None:
     init_parser.add_argument("--no-install", action="store_true", help="Create files and submodule but skip virtualenv and dependency installation.")
     init_parser.add_argument("--no-observability", action="store_true", help="Do not reuse or start the shared local Langfuse setup.")
     init_parser.add_argument("--non-interactive", action="store_true", help="Use defaults and skip all setup prompts; intended for automation.")
+    commands.add_parser("update", help="Fast-forward this Supervisor checkout from origin/main and reinstall its CLI tools.")
     arguments = parser.parse_args()
     if arguments.command == "configure":
         configure(arguments.config.expanduser().resolve())
+    if arguments.command == "update":
+        try:
+            update_workspace()
+        except RuntimeError as error:
+            parser.error(str(error))
     if arguments.command == "init":
         try:
             if arguments.non_interactive and arguments.project is None:

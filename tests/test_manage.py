@@ -86,6 +86,32 @@ def test_project_path_prompt_requires_a_path(monkeypatch, tmp_path: Path, capsys
     assert "A project directory is required." in capsys.readouterr().out
 
 
+def test_update_workspace_fast_forwards_and_reinstalls(monkeypatch, tmp_path: Path):
+    commands: list[tuple[list[str], Path | None]] = []
+    monkeypatch.setattr(manage, "_git_output", lambda command, *, cwd: str(tmp_path) if command[1] == "rev-parse" else "")
+    monkeypatch.setattr(manage, "_run", lambda command, *, cwd=None: commands.append((command, cwd)))
+    monkeypatch.setattr(manage.sys, "executable", "/tools/python")
+
+    result = manage.update_workspace(tmp_path)
+
+    assert result == tmp_path
+    assert commands == [
+        (["git", "pull", "--ff-only", "origin", "main"], tmp_path),
+        (["/tools/python", "-m", "pip", "install", "--no-build-isolation", "-e", ".[dev]"], tmp_path),
+    ]
+
+
+def test_update_workspace_refuses_tracked_changes(monkeypatch, tmp_path: Path):
+    monkeypatch.setattr(manage, "_git_output", lambda command, *, cwd: str(tmp_path) if command[1] == "rev-parse" else " M README.md")
+
+    try:
+        manage.update_workspace(tmp_path)
+    except RuntimeError as error:
+        assert "local changes" in str(error)
+    else:
+        raise AssertionError("Expected a dirty Supervisor checkout to be rejected.")
+
+
 def test_setup_local_langfuse_reuses_a_running_instance(monkeypatch, tmp_path: Path, capsys):
     monkeypatch.setattr(manage, "local_langfuse_running", lambda: True)
     monkeypatch.setattr(manage, "_run", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("should not bootstrap")))

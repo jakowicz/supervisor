@@ -22,6 +22,16 @@ If `~/.local/bin` is not already on your `PATH`, the installer prints the one
 `SUPERVISOR_PYTHON=/path/to/python` only when you need to override its automatic
 Python 3.10+ selection.
 
+To update the installed tools later, run this from any terminal:
+
+```zsh
+supervisor update
+```
+
+It fast-forwards the Supervisor checkout that provides the invoked CLI and
+reinstalls its commands into the same virtual environment. It refuses to update
+when that checkout has local edits, so it cannot overwrite work.
+
 ### New project
 
 From an existing Supervisor installation, create a ready-to-configure project:
