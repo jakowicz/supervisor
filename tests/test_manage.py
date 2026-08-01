@@ -191,6 +191,19 @@ def test_project_supervisor_checkout_rejects_unrelated_directory(tmp_path: Path)
         raise AssertionError("Expected a directory without supervisor/ to be rejected.")
 
 
+def test_upgrade_cli_updates_the_checkout_providing_the_command(monkeypatch, tmp_path: Path):
+    commands: list[tuple[list[str], Path | None]] = []
+    monkeypatch.setattr(manage, "_git_output", lambda command, *, cwd: str(tmp_path) if command[1] == "rev-parse" else "")
+    monkeypatch.setattr(manage, "_run", lambda command, *, cwd=None: commands.append((command, cwd)))
+    monkeypatch.setattr(manage.sys, "executable", "/tools/python")
+
+    assert manage.upgrade_cli(tmp_path) == tmp_path
+    assert commands == [
+        (["git", "pull", "--ff-only", "origin", "main"], tmp_path),
+        (["/tools/python", "-m", "pip", "install", "-e", ".[dev]"], tmp_path),
+    ]
+
+
 def test_setup_local_langfuse_reuses_a_running_instance(monkeypatch, tmp_path: Path, capsys):
     monkeypatch.setattr(manage, "local_langfuse_running", lambda: True)
     monkeypatch.setattr(manage, "_run", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("should not bootstrap")))

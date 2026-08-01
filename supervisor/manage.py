@@ -365,6 +365,23 @@ def update_workspace(start: Path | None = None) -> Path:
     return repository_root
 
 
+def upgrade_cli(start: Path | None = None) -> Path:
+    """Update the checkout that provides the currently invoked Supervisor CLI."""
+
+    package_root = (start or Path(__file__).resolve().parents[1]).resolve()
+    repository_root = Path(_git_output(["git", "rev-parse", "--show-toplevel"], cwd=package_root))
+    if _git_output(["git", "status", "--porcelain"], cwd=repository_root):
+        raise RuntimeError(
+            f"Refusing to upgrade a Supervisor checkout with local changes: {repository_root}. "
+            "Commit, stash, or discard those changes first."
+        )
+    print(f"Upgrading the Supervisor CLI from {repository_root}")
+    _run(["git", "pull", "--ff-only", "origin", "main"], cwd=repository_root)
+    _run([sys.executable, "-m", "pip", "install", "-e", ".[dev]"], cwd=repository_root)
+    print("Supervisor CLI tools are up to date.")
+    return repository_root
+
+
 def choose_python(requested: str | None = None) -> str:
     """Find a Python 3.10+ interpreter on PATH, or validate an override."""
 
@@ -511,12 +528,18 @@ def main() -> None:
     init_parser.add_argument("--no-observability", action="store_true", help="Do not reuse or start the shared local Langfuse setup.")
     init_parser.add_argument("--non-interactive", action="store_true", help="Use defaults and skip all setup prompts; intended for automation.")
     commands.add_parser("update", help="Fast-forward the current project's supervisor/ checkout from origin/main and reinstall its CLI tools.")
+    commands.add_parser("upgrade", help="Fast-forward the checkout that provides this Supervisor CLI and reinstall its commands.")
     arguments = parser.parse_args()
     if arguments.command == "configure":
         configure(arguments.config.expanduser().resolve())
     if arguments.command == "update":
         try:
             update_workspace(Path.cwd())
+        except RuntimeError as error:
+            parser.error(str(error))
+    if arguments.command == "upgrade":
+        try:
+            upgrade_cli()
         except RuntimeError as error:
             parser.error(str(error))
     if arguments.command == "init":

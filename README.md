@@ -22,6 +22,12 @@ If `~/.local/bin` is not already on your `PATH`, the installer prints the one
 `SUPERVISOR_PYTHON=/path/to/python` only when you need to override its automatic
 Python 3.10+ selection.
 
+To update the global/installed CLI itself, run:
+
+```zsh
+supervisor upgrade
+```
+
 To update the Supervisor checkout inside the project you are working in, run
 this from that project directory (or one of its subdirectories):
 
