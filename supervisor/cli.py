@@ -353,7 +353,7 @@ def _resume_stage(state: dict | None) -> str:
         return "prepare"
     candidate = str(state.get("next_action", "prepare"))
     return candidate if candidate in {
-        "prepare", "qwen", "openhands", "codex", "codex_final", "test", "browser",
+        "prepare", "qwen", "openhands", "codex", "codex_final", "precheck", "test", "browser",
         "visual_review", "completion_audit", "git_publish", "user_review",
     } else "prepare"
 

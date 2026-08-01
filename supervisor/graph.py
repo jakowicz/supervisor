@@ -59,7 +59,7 @@ def create_graph(config: SupervisorConfig):
             # leaves to the independent test stage.
             if stage in {"qwen", "openhands", "codex", "codex_final"} and state.get("events"):
                 prior = state["events"][-1]
-                if prior.stage in {"test", "browser", "visual_review", "completion_audit"} and prior.status is not Status.PASS:
+                if prior.stage in {"precheck", "test", "browser", "visual_review", "completion_audit"} and prior.status is not Status.PASS:
                     evidence = prior.result.test_result or prior.result.evidence.test_log or prior.summary
                     handoff = f"Previous {prior.stage} stage failed; repair this evidence before retry:\n{evidence[-12000:]}"
                     task = task.model_copy(update={
@@ -171,6 +171,7 @@ def create_graph(config: SupervisorConfig):
     builder.add_node("openhands", worker_node("openhands", "OpenHands", "OPENHANDS configured model", openhands.run))
     builder.add_node("codex", worker_node("codex", "Codex", "CODEX_MODEL or CLI default", codex.run))
     builder.add_node("codex_final", worker_node("codex_final", "Codex final verifier/fixer", "CODEX_MODEL or CLI default", _dry_run_coder if config.dry_run else codex.run))
+    builder.add_node("precheck", worker_node("precheck", "candidate Flutter precheck", "deterministic shell commands", lambda task: tester.run(task, config.repo_root, config.dry_run)))
     builder.add_node("test", worker_node("test", "independent Flutter test worker", "deterministic shell commands", lambda task: tester.run(task, config.repo_root, config.dry_run)))
     builder.add_node("browser", worker_node("browser", "browser QA worker", "BROWSER_QA_COMMAND", lambda task: browser.run(task, config.dry_run)))
     builder.add_node("visual_review", worker_node("visual_review", "visual QA reviewer", "VISUAL_REVIEW_COMMAND", lambda task: visual_review.run(task, config.dry_run)))
@@ -223,7 +224,7 @@ def create_graph(config: SupervisorConfig):
         return {"worker_results": [*state.get("worker_results", []), result], "events": [*state.get("events", []), event], "route": route, "notes": [*state.get("notes", []), f"completion audit: {result.status.value}: {result.summary}"]}
 
     builder.add_node("completion_audit", audit_node)
-    for stage in ("qwen", "openhands", "codex", "codex_final", "test", "browser", "visual_review", "completion_audit", "git_publish"):
+    for stage in ("qwen", "openhands", "codex", "codex_final", "precheck", "test", "browser", "visual_review", "completion_audit", "git_publish"):
         builder.add_conditional_edges(stage, lambda state: state["route"])
     builder.add_edge("accept", END)
     builder.add_edge("user_review", END)

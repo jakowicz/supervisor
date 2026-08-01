@@ -6,9 +6,10 @@ def result(status: Status) -> WorkerResult:
     return WorkerResult(status=status, summary="test", recommended_next_step=NextStep.COMPLETE)
 
 
-def test_primary_or_openhands_pass_requires_codex_final_review_then_qa():
-    assert next_route("qwen", result(Status.PASS), "qwen", {"qwen": 1}) == "codex_final"
-    assert next_route("openhands", result(Status.PASS), "openhands", {"openhands": 1}) == "codex_final"
+def test_primary_or_openhands_pass_requires_precheck_then_codex_final_review():
+    assert next_route("qwen", result(Status.PASS), "qwen", {"qwen": 1}) == "precheck"
+    assert next_route("openhands", result(Status.PASS), "openhands", {"openhands": 1}) == "precheck"
+    assert next_route("precheck", result(Status.PASS), "qwen", {"qwen": 1}) == "codex_final"
     assert next_route("codex_final", result(Status.PASS), "codex_final", {"codex_final": 1}) == "test"
     assert next_route("test", result(Status.PASS), "qwen", {"qwen": 1}) == "browser"
     assert next_route("browser", result(Status.PASS), "qwen", {"qwen": 1}) == "visual_review"

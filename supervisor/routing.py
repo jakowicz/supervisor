@@ -50,12 +50,15 @@ def next_route(stage: str, result: WorkerResult, active_agent: str, attempts: di
     if result.status is Status.PASS:
         return {
             # A successful primary/fallback implementation is always examined
-            # and, where necessary, repaired by Codex before deterministic QA.
-            "qwen": "codex_final",
-            "openhands": "codex_final",
+            # and, where necessary, repaired by Codex before acceptance.  A
+            # deterministic precheck comes first: do not spend the final
+            # review budget on a candidate that does not even compile.
+            "qwen": "precheck",
+            "openhands": "precheck",
             # Codex already performed the implementation when it was the
             # fallback, so a second Codex pass would be redundant.
             "codex": "test",
+            "precheck": "codex_final",
             "codex_final": "test",
             "test": "browser",
             "browser": "visual_review",
@@ -67,8 +70,8 @@ def next_route(stage: str, result: WorkerResult, active_agent: str, attempts: di
         return "user_review"
     # Validation infrastructure is not a coding-agent defect. Preserve evidence
     # and ask for repair/configuration rather than burning expensive retries.
-    if result.status is Status.ENVIRONMENT_FAILURE and stage in {"test", "browser", "visual_review"}:
+    if result.status is Status.ENVIRONMENT_FAILURE and stage in {"precheck", "test", "browser", "visual_review"}:
         return "user_review"
-    if stage in {"test", "browser", "visual_review", "completion_audit"}:
+    if stage in {"precheck", "test", "browser", "visual_review", "completion_audit"}:
         return next_agent(active_agent, attempts)
     return next_agent(stage, attempts)
