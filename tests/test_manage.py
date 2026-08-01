@@ -99,6 +99,43 @@ def test_model_choices_prefer_qwen_and_terra(monkeypatch):
     assert manage._choose_codex_model("") == "gpt-5.6-terra"
 
 
+def test_shared_langfuse_credentials_reads_bootstrap_key_pair(tmp_path: Path):
+    supervisor_root = tmp_path / "supervisor"
+    observability = supervisor_root / "observability"
+    observability.mkdir(parents=True)
+    (observability / ".env").write_text(
+        "LANGFUSE_INIT_PROJECT_PUBLIC_KEY=pk-lf-test\nLANGFUSE_INIT_PROJECT_SECRET_KEY=sk-lf-test\n",
+        encoding="utf-8",
+    )
+
+    assert manage.shared_langfuse_credentials(supervisor_root) == {
+        "LANGFUSE_BASE_URL": "http://127.0.0.1:3001",
+        "LANGFUSE_PUBLIC_KEY": "pk-lf-test",
+        "LANGFUSE_SECRET_KEY": "sk-lf-test",
+    }
+
+
+def test_configure_langfuse_starts_then_reuses_discovered_local_project(monkeypatch, tmp_path: Path):
+    calls: list[Path] = []
+    running = iter([False, True])
+    monkeypatch.setattr(manage, "local_langfuse_running", lambda: next(running))
+    monkeypatch.setattr(manage, "_yes_no", lambda *_args, **_kwargs: True)
+    monkeypatch.setattr(manage, "setup_local_langfuse", lambda root: calls.append(root))
+    monkeypatch.setattr(
+        manage,
+        "shared_langfuse_credentials",
+        lambda _root: {"LANGFUSE_BASE_URL": "http://127.0.0.1:3001", "LANGFUSE_PUBLIC_KEY": "pk", "LANGFUSE_SECRET_KEY": "sk"},
+    )
+    values: dict[str, str] = {}
+    config = tmp_path / "supervisor" / ".env"
+
+    manage.configure_langfuse(config, values)
+
+    assert calls == [config.parent]
+    assert values["LANGFUSE_PUBLIC_KEY"] == "pk"
+    assert values["LANGFUSE_SECRET_KEY"] == "sk"
+
+
 def test_project_path_prompt_requires_a_path(monkeypatch, tmp_path: Path, capsys):
     answers = iter(["", str(tmp_path / "new-project")])
     monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))

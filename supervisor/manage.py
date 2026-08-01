@@ -183,6 +183,55 @@ def _value(values: dict[str, str | None], key: str) -> str:
     return str(values.get(key) or os.getenv(key) or DEFAULTS.get(key, ""))
 
 
+def _credentials_from(path: Path) -> dict[str, str]:
+    if not path.is_file():
+        return {}
+    loaded = dotenv_values(path)
+    public = loaded.get("LANGFUSE_PUBLIC_KEY") or loaded.get("LANGFUSE_INIT_PROJECT_PUBLIC_KEY")
+    secret = loaded.get("LANGFUSE_SECRET_KEY") or loaded.get("LANGFUSE_INIT_PROJECT_SECRET_KEY")
+    if not public or not secret:
+        return {}
+    return {
+        "LANGFUSE_BASE_URL": str(loaded.get("LANGFUSE_BASE_URL") or "http://127.0.0.1:3001"),
+        "LANGFUSE_PUBLIC_KEY": str(public),
+        "LANGFUSE_SECRET_KEY": str(secret),
+    }
+
+
+def shared_langfuse_credentials(supervisor_root: Path) -> dict[str, str]:
+    """Read managed local-project keys without displaying any secret."""
+
+    config_root = Path(os.getenv("XDG_CONFIG_HOME", Path.home() / ".config"))
+    for candidate in (
+        config_root / "runbook-supervisor" / "langfuse.env",
+        supervisor_root / "observability" / ".env",
+    ):
+        credentials = _credentials_from(candidate)
+        if credentials:
+            return credentials
+    return {}
+
+
+def configure_langfuse(path: Path, values: dict[str, str]) -> None:
+    """Use/start shared local Langfuse, falling back to an explicit key prompt."""
+
+    supervisor_root = path.parent
+    if not local_langfuse_running():
+        if _yes_no("Local Langfuse is not running. Install/start the shared local service now", True):
+            setup_local_langfuse(supervisor_root)
+        else:
+            print("Langfuse was not started. Enter credentials for an existing remote or local project.")
+    if not values.get("LANGFUSE_PUBLIC_KEY") or not values.get("LANGFUSE_SECRET_KEY"):
+        discovered = shared_langfuse_credentials(supervisor_root) if local_langfuse_running() else {}
+        if discovered:
+            values.update(discovered)
+            print("Reusing the shared local Langfuse default-project credentials.")
+        else:
+            print("\nLangfuse project credentials could not be discovered. Enter them below:")
+            values["LANGFUSE_PUBLIC_KEY"] = _prompt("Langfuse public key", "", secret=True)
+            values["LANGFUSE_SECRET_KEY"] = _prompt("Langfuse secret key", "", secret=True)
+
+
 def _write_env(path: Path, values: dict[str, str]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     lines = [
@@ -247,10 +296,7 @@ def configure(path: Path) -> None:
     values["SUPERVISOR_OBSERVABILITY_ENABLED"] = "true"
     values["SUPERVISOR_OBSERVABILITY_ENVIRONMENT"] = _value(existing, "SUPERVISOR_OBSERVABILITY_ENVIRONMENT")
     values["LANGFUSE_BASE_URL"] = _value(existing, "LANGFUSE_BASE_URL")
-    if not values.get("LANGFUSE_PUBLIC_KEY") or not values.get("LANGFUSE_SECRET_KEY"):
-        print("\nLangfuse project credentials (required when this project has not already received shared local keys):")
-        values["LANGFUSE_PUBLIC_KEY"] = _prompt("Langfuse public key", _value(existing, "LANGFUSE_PUBLIC_KEY"), secret=True)
-        values["LANGFUSE_SECRET_KEY"] = _prompt("Langfuse secret key", _value(existing, "LANGFUSE_SECRET_KEY"), secret=True)
+    configure_langfuse(path, values)
 
     _write_env(path, values)
     print(f"Wrote {path} (mode 600). Secrets were not printed.")

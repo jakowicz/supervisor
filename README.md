@@ -61,6 +61,16 @@ worker commands. Provider-specific values—model names, API keys, and an
 independent visual-review command—remain blank by design rather than being
 guessed.
 
+When configuration needs Langfuse project keys, Supervisor first checks the
+shared local service. If it is not running, it asks permission to start the
+one shared local stack; that bootstrap creates the default project and securely
+registers its key pair for later project setups. If the service is already
+running, Supervisor reuses those registered keys when available. Langfuse OSS
+does not provide the organization-level project-provisioning API required to
+automatically create another project on a running instance, so a project with
+unknown credentials still prompts for its existing key pair rather than
+modifying the service database.
+
 ### Existing project
 
 Add the Supervisor as a submodule, install it, then configure the project:
