@@ -72,7 +72,11 @@ about acceptance criteria. Then run it from `../supervisor`:
 
 
 def _prompt(label: str, default: str, *, secret: bool = False) -> str:
-    prompt = f"{label} [{default}]: " if default else f"{label}: "
+    prompt = (
+        f"{label} (press Enter to keep the current value): "
+        if secret and default
+        else f"{label} [{default}]: " if default else f"{label}: "
+    )
     value = getpass.getpass(prompt) if secret else input(prompt)
     return value.strip() or default
 
@@ -185,7 +189,13 @@ def local_langfuse_running() -> bool:
         return False
 
 
-def setup_local_langfuse(supervisor_root: Path) -> None:
+def setup_local_langfuse(
+    supervisor_root: Path,
+    *,
+    email: str | None = None,
+    name: str | None = None,
+    password: str | None = None,
+) -> None:
     """Start one local Langfuse instance only when a shared one is absent."""
 
     if local_langfuse_running():
@@ -195,7 +205,14 @@ def setup_local_langfuse(supervisor_root: Path) -> None:
     if not script.is_file():
         raise RuntimeError(f"Local Langfuse bootstrap script is missing: {script}")
     print("No local Langfuse instance is running; starting the shared local setup.")
-    _run(["bash", str(script)], cwd=supervisor_root)
+    command = ["bash", str(script)]
+    if email:
+        command.extend(["--email", email])
+    if name:
+        command.extend(["--name", name])
+    if password:
+        command.extend(["--password", password])
+    _run(command, cwd=supervisor_root)
 
 
 def initialise_project(
@@ -205,6 +222,9 @@ def initialise_project(
     python: str = "python3",
     install: bool = True,
     observability: bool = True,
+    langfuse_email: str | None = None,
+    langfuse_name: str | None = None,
+    langfuse_password: str | None = None,
 ) -> None:
     """Create an empty Git project ready to run scoped supervisor runbooks."""
 
@@ -239,7 +259,12 @@ def initialise_project(
         _run([str(venv_python), "-m", "pip", "install", "--no-build-isolation", "-e", ".[dev]"], cwd=project_root / "supervisor")
 
     if observability:
-        setup_local_langfuse(project_root / "supervisor")
+        setup_local_langfuse(
+            project_root / "supervisor",
+            email=langfuse_email,
+            name=langfuse_name,
+            password=langfuse_password,
+        )
 
     print("Project ready.")
     print(f"1. Edit {runbooks / 'TEMPLATE.md'} and save it as your first task runbook.")
@@ -252,24 +277,41 @@ def main() -> None:
     commands = parser.add_subparsers(dest="command", required=True)
     configure_parser = commands.add_parser("configure", help="Interactively create or update an ignored .env configuration file.")
     configure_parser.add_argument("--config", type=Path, default=Path(".env"), help="Configuration file to write (default: .env).")
-    init_parser = commands.add_parser("init", help="Create an empty Git project with the supervisor submodule, runbooks, state ignore, local install, and shared Langfuse setup.")
+    init_parser = commands.add_parser("init", help="Interactively create and configure an empty Git project with the supervisor, runbooks, and shared Langfuse setup.")
     init_parser.add_argument("project", type=Path, help="New or empty project directory to initialise.")
     init_parser.add_argument("--supervisor-url", default=DEFAULT_SUPERVISOR_URL, help="Git URL for the supervisor submodule.")
     init_parser.add_argument("--python", default="python3", help="Python interpreter used to create the project virtual environment.")
     init_parser.add_argument("--no-install", action="store_true", help="Create files and submodule but skip virtualenv and dependency installation.")
     init_parser.add_argument("--no-observability", action="store_true", help="Do not reuse or start the shared local Langfuse setup.")
+    init_parser.add_argument("--non-interactive", action="store_true", help="Use defaults and skip all setup prompts; intended for automation.")
     arguments = parser.parse_args()
     if arguments.command == "configure":
         configure(arguments.config.expanduser().resolve())
     if arguments.command == "init":
         try:
+            observability = not arguments.no_observability
+            bootstrap_account: dict[str, str | None] = {}
+            if observability and not arguments.non_interactive and not local_langfuse_running():
+                print("\nNo shared local Langfuse instance is running. Configure its initial administrator:")
+                if _yes_no("Start shared local Langfuse now", True):
+                    bootstrap_account = {
+                        "langfuse_email": _prompt("Initial Langfuse email", "local@supervisor.invalid"),
+                        "langfuse_name": _prompt("Initial Langfuse display name", "Local Operator"),
+                        "langfuse_password": _prompt("Initial Langfuse password (leave blank to generate securely)", "", secret=True),
+                    }
+                else:
+                    observability = False
             initialise_project(
                 arguments.project,
                 supervisor_url=arguments.supervisor_url,
                 python=arguments.python,
                 install=not arguments.no_install,
-                observability=not arguments.no_observability,
+                observability=observability,
+                **bootstrap_account,
             )
+            if not arguments.non_interactive:
+                print("\nConfigure this project's supervisor:")
+                configure(arguments.project.expanduser().resolve() / "supervisor" / ".env")
         except (RuntimeError, ValueError) as error:
             parser.error(str(error))
 

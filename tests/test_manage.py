@@ -60,3 +60,16 @@ def test_setup_local_langfuse_bootstraps_only_when_absent(monkeypatch, tmp_path:
     manage.setup_local_langfuse(tmp_path)
 
     assert commands == [(["bash", str(script)], tmp_path)]
+
+
+def test_setup_local_langfuse_passes_initial_account_values(monkeypatch, tmp_path: Path):
+    script = tmp_path / "observability" / "setup-local.sh"
+    script.parent.mkdir()
+    script.write_text("#!/usr/bin/env bash\n", encoding="utf-8")
+    commands: list[tuple[list[str], Path | None]] = []
+    monkeypatch.setattr(manage, "local_langfuse_running", lambda: False)
+    monkeypatch.setattr(manage, "_run", lambda command, *, cwd=None: commands.append((command, cwd)))
+
+    manage.setup_local_langfuse(tmp_path, email="me@example.com", name="Me", password="safe-password")
+
+    assert commands == [(["bash", str(script), "--email", "me@example.com", "--name", "Me", "--password", "safe-password"], tmp_path)]

@@ -18,8 +18,12 @@ cd ~/Dev/my-project/supervisor
 
 `init` creates a Git repository, adds this repository as `supervisor/`, creates
 `runbooks/TEMPLATE.md`, configures ignored root `.state/` evidence storage, and
-installs the local virtual environment. It reuses the one shared Langfuse
-service at `http://127.0.0.1:3001` when it is already running.
+installs the local virtual environment. It is interactive: it asks for the
+initial shared-Langfuse account only when no local service is running, then
+prompts for this project's worker commands/models, retry policy, Git policy,
+dashboard preference, and Langfuse project credentials. It reuses the one
+shared Langfuse service at `http://127.0.0.1:3001` when it is already running.
+Use `--non-interactive` only for automated provisioning.
 
 ### Existing project
 
