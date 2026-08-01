@@ -35,6 +35,11 @@ def test_default_tester_runs_an_available_project_contract_check(monkeypatch, tm
 
     result = run(Task(task_id="D010", title="Release journey"), tmp_path)
 
+    assert calls[:3] == [
+        ["flutter", "analyze", "--no-fatal-infos"],
+        ["flutter", "test"],
+        ["flutter", "build", "web", "--release"],
+    ]
     assert calls[-1] == ["scripts/check_release_qa_docs.sh"]
     assert result.status is Status.PASS
     assert "project-contract checks" in result.summary

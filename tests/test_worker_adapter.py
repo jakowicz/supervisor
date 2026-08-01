@@ -130,6 +130,18 @@ def test_openhands_finish_action_with_partial_contract_is_normalised():
     assert "flutter test" in result.test_result
 
 
+def test_openhands_finish_action_is_parsed_from_mixed_jsonl_output():
+    event = {
+        "action": {"message": json.dumps({"status": "repairable_failure", "summary": "Fix lint"})},
+    }
+
+    result = parse_openhands_result("OpenHands starting\n" + json.dumps(event) + "\nAgent finished")
+
+    assert result is not None
+    assert result.status.value == "repairable_failure"
+    assert result.summary == "Fix lint"
+
+
 def test_static_browser_mode_tells_coders_to_leave_browser_evidence_to_qa(monkeypatch):
     monkeypatch.setenv("SUPERVISOR_BROWSER_QA_MODE", "static")
 
@@ -137,3 +149,10 @@ def test_static_browser_mode_tells_coders_to_leave_browser_evidence_to_qa(monkey
 
     assert "Do not install or attempt to launch Playwright" in prompt
     assert "authoritative browser-contract\ncheck" in prompt
+
+
+def test_codex_prompt_leaves_flutter_sdk_commands_to_independent_workers():
+    prompt = task_prompt(Task(task_id="D011", title="Colour"), codex_sandbox=True)
+
+    assert "Do not invoke `flutter`,\n`dart`" in prompt
+    assert "request an approval escalation" in prompt

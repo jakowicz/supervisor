@@ -36,7 +36,7 @@ def main() -> None:
         ]
         if os.getenv("CODEX_MODEL"):
             command.extend(["--model", os.environ["CODEX_MODEL"]])
-        command.append(task_prompt(task))
+        command.append(task_prompt(task, codex_sandbox=True))
         code, stdout, stderr = run_command(command, repo_root)
         if code != 0:
             emit(failure("Codex worker", f"exited with code {code}", NextStep.ASK_USER, stdout, stderr))

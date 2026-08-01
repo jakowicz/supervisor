@@ -189,7 +189,13 @@ def parse_openhands_result(output: str) -> WorkerResult | None:
     if strict:
         return strict
 
-    pending: list[object] = [output]
+    # The OpenHands CLI mixes human-readable startup/progress lines with JSONL
+    # events.  The FinishAction can therefore be perfectly valid while the
+    # complete stdout string is not itself JSON.  Inspect each JSONL record as
+    # well as the complete response before walking nested event payloads.
+    pending: list[object] = [output, *(
+        line for line in output.splitlines() if line.lstrip().startswith(("{", "["))
+    )]
     while pending:
         value = pending.pop(0)
         if isinstance(value, str):
@@ -239,7 +245,12 @@ def parse_openhands_result(output: str) -> WorkerResult | None:
     return None
 
 
-def task_prompt(task: Task, *, completion_mode: str = "structured_output") -> str:
+def task_prompt(
+    task: Task,
+    *,
+    completion_mode: str = "structured_output",
+    codex_sandbox: bool = False,
+) -> str:
     task_json = json.dumps(model_to_dict(task), indent=2)
     static_browser_instructions = ""
     if os.getenv("SUPERVISOR_BROWSER_QA_MODE") == "static":
@@ -274,6 +285,18 @@ hand the candidate to the independent test stage. Return `repairable_failure`
 only when a concrete implementation or acceptance gap remains that you cannot
 finish; the supervisor will retry this same Codex final-review stage up to its
 configured limit.
+"""
+    codex_sandbox_instructions = ""
+    if codex_sandbox:
+        codex_sandbox_instructions = """
+
+This Codex worker runs in a workspace-only sandbox. Do not invoke `flutter`,
+`dart`, SDK/bootstrap tooling, or request an approval escalation: those tools
+can write SDK caches outside the worktree and are deliberately owned by the
+supervisor's independent precheck/test stages. When the continuation evidence
+names a concrete source or test failure, repair that evidence in the worktree,
+run only safe focused checks, and return `pass` for the deterministic stage to
+validate. Never return a failure solely because an SDK command needs approval.
 """
     if completion_mode == "finish_action":
         completion_protocol = """Completion protocol:
@@ -314,6 +337,7 @@ Task:
 Continuation checkpoint (only when present):
 {task.continuation_context or "No prior checkpoint: inspect the current repository before making changes."}
 {final_verification_instructions}
+{codex_sandbox_instructions}
 {static_browser_instructions}
 
 Efficient investigation rules (especially important for local models):

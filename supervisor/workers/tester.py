@@ -16,7 +16,10 @@ def run(task: Task, repo_root: Path, dry_run: bool = False) -> WorkerResult:
     logs: list[str] = []
     configured_command = os.getenv("SUPERVISOR_TEST_COMMAND")
     commands = [shlex.split(configured_command)] if configured_command else [
-        ["flutter", "analyze"], ["flutter", "test"], ["flutter", "build", "web", "--release"],
+        # Flutter exits non-zero for lint *information* by default. Keep those
+        # visible in the captured log, but reserve the repair loop for actual
+        # analyzer errors and warnings that can affect correctness.
+        ["flutter", "analyze", "--no-fatal-infos"], ["flutter", "test"], ["flutter", "build", "web", "--release"],
     ]
     release_docs_check = repo_root / "scripts" / "check_release_qa_docs.sh"
     if not configured_command and release_docs_check.is_file() and os.access(release_docs_check, os.X_OK):
