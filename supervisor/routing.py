@@ -34,11 +34,27 @@ def primary_agent() -> str:
 
 
 def configured_stage_order() -> tuple[str, ...]:
-    """Return an explicit project pipeline, or an empty tuple for legacy routing."""
+    """Return only an explicit pipeline that preserves every acceptance gate.
+
+    This compatibility setting used to accept partial lists.  A resumed worker
+    missing from such a list was treated as the final stage and could reach
+    ``accept`` directly.  Configuration must never weaken the mandatory QA
+    chain, so partial/stale values now fall back to the safe default routing.
+    """
 
     configured = os.getenv("SUPERVISOR_AGENT_ORDER", "")
     stages = tuple(stage.strip().lower() for stage in configured.split(",") if stage.strip().lower() in _ALL_STAGES)
-    return stages
+    if not stages:
+        return ()
+
+    primary = primary_agent()
+    verification_stages = ("test", "browser", "visual_review", "completion_audit", "git_publish")
+    required = (
+        (primary, *verification_stages)
+        if primary == "codex" or "codex" not in implementation_agents()
+        else (primary, "precheck", "codex_final", *verification_stages)
+    )
+    return stages if stages == required else ()
 
 
 def first_stage() -> str:

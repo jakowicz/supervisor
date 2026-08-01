@@ -278,8 +278,10 @@ def configure(path: Path) -> None:
     values["SUPERVISOR_WORKER_TIMEOUT_SECONDS"] = _prompt("Worker timeout in seconds", _value(existing, "SUPERVISOR_WORKER_TIMEOUT_SECONDS"))
     values["SUPERVISOR_QWEN_IDLE_TIMEOUT_SECONDS"] = _prompt("Qwen no-progress timeout in seconds", _value(existing, "SUPERVISOR_QWEN_IDLE_TIMEOUT_SECONDS"))
     values["SUPERVISOR_PROGRESS_HEARTBEAT_SECONDS"] = _prompt("Terminal heartbeat in seconds", _value(existing, "SUPERVISOR_PROGRESS_HEARTBEAT_SECONDS"))
-    values["SUPERVISOR_CODING_AGENTS"] = _prompt("Coding agents in execution order (for example codex)", _value(existing, "SUPERVISOR_CODING_AGENTS"))
-    values["SUPERVISOR_AGENT_ORDER"] = _prompt("Full stage order, comma-separated (blank uses the Supervisor default)", _value(existing, "SUPERVISOR_AGENT_ORDER"))
+    values["SUPERVISOR_CODING_AGENTS"] = _prompt("Coding agents in execution order (for example qwen,openhands,codex)", _value(existing, "SUPERVISOR_CODING_AGENTS"))
+    # Pipeline gates are intentionally fixed. Agent selection and retry counts
+    # remain configurable, but no interactive setting may skip independent QA.
+    values.pop("SUPERVISOR_AGENT_ORDER", None)
 
     print("\nAgent retry policy (total implementation attempts; Codex final repairs are additional after its first review):")
     for key, label in (
