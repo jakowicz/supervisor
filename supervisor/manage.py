@@ -277,12 +277,12 @@ def configure(path: Path) -> None:
     values["SUPERVISOR_QWEN_IDLE_TIMEOUT_SECONDS"] = _prompt("Qwen no-progress timeout in seconds", _value(existing, "SUPERVISOR_QWEN_IDLE_TIMEOUT_SECONDS"))
     values["SUPERVISOR_PROGRESS_HEARTBEAT_SECONDS"] = _prompt("Terminal heartbeat in seconds", _value(existing, "SUPERVISOR_PROGRESS_HEARTBEAT_SECONDS"))
 
-    print("\nAgent retry policy (total attempts, including the first attempt):")
+    print("\nAgent retry policy (total implementation attempts; Codex final repairs are additional after its first review):")
     for key, label in (
         ("SUPERVISOR_QWEN_ATTEMPTS", "Qwen attempts"),
         ("SUPERVISOR_OPENHANDS_ATTEMPTS", "OpenHands attempts"),
         ("SUPERVISOR_CODEX_ATTEMPTS", "Codex fallback attempts"),
-        ("SUPERVISOR_CODEX_FINAL_ATTEMPTS", "Codex final-review attempts"),
+        ("SUPERVISOR_CODEX_FINAL_ATTEMPTS", "Codex final-review repairs after QA failure"),
     ):
         values[key] = _prompt(label, _value(existing, key))
 

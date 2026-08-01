@@ -46,6 +46,27 @@ def _dry_run_coder(task: Task) -> WorkerResult:
     )
 
 
+def _repair_handoff(stage: str, result: WorkerResult) -> str:
+    """Return the most useful bounded evidence packet for a coding repair."""
+
+    if stage == "browser" and result.evidence.browser_log:
+        return (
+            "Browser QA executed and failed. Treat this as a product/test failure, "
+            "not an environment failure, unless the raw log proves that no browser "
+            "test could start. Repair the failing test or product behavior, then let "
+            "independent QA rerun it.\n\n"
+            + result.evidence.browser_log[-12000:]
+        )
+    evidence = (
+        result.test_result
+        or result.evidence.test_log
+        or result.evidence.agent_log
+        or result.evidence.adapter_log
+        or result.summary
+    )
+    return evidence[-12000:]
+
+
 def create_graph(config: SupervisorConfig):
     builder = StateGraph(SupervisorState)
 
@@ -60,8 +81,8 @@ def create_graph(config: SupervisorConfig):
             if stage in {"qwen", "openhands", "codex", "codex_final"} and state.get("events"):
                 prior = state["events"][-1]
                 if prior.stage in {"precheck", "test", "browser", "visual_review", "completion_audit"} and prior.status is not Status.PASS:
-                    evidence = prior.result.test_result or prior.result.evidence.test_log or prior.summary
-                    handoff = f"Previous {prior.stage} stage failed; repair this evidence before retry:\n{evidence[-12000:]}"
+                    evidence = _repair_handoff(prior.stage, prior.result)
+                    handoff = f"Previous {prior.stage} stage failed; repair this evidence before retry:\n{evidence}"
                     task = task.model_copy(update={
                         "continuation_context": "\n".join(part for part in (task.continuation_context, handoff) if part),
                     })

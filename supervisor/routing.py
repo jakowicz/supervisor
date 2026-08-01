@@ -7,8 +7,9 @@ import os
 from .models import Status, WorkerResult
 
 
-# Limits are total attempts: one primary Qwen attempt, then one OpenHands
-# attempt, then up to three Codex implementation or final-review attempts.
+# Limits are total attempts for implementation agents.  The Codex-final value
+# is deliberately a *post-QA repair* budget: its initial verification runs
+# once, then it may repair demonstrated QA failures up to this many times.
 DEFAULT_AGENT_LIMITS = {"qwen": 1, "openhands": 1, "codex": 3, "codex_final": 3}
 _LIMIT_ENVIRONMENT_KEYS = {
     "qwen": "SUPERVISOR_QWEN_ATTEMPTS",
@@ -34,7 +35,12 @@ def agent_limits() -> dict[str, int]:
 def next_agent(current_agent: str, attempts: dict[str, int]) -> str:
     """Keep a repair with its current agent until its bounded budget is spent."""
 
-    if attempts.get(current_agent, 0) < agent_limits()[current_agent]:
+    limit = agent_limits()[current_agent]
+    # The first Codex-final pass is an independent verification, not a repair.
+    # Reserve the configured budget for retries caused by a failing QA stage.
+    if current_agent == "codex_final":
+        limit += 1
+    if attempts.get(current_agent, 0) < limit:
         return current_agent
     return {
         "qwen": "openhands",

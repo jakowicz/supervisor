@@ -31,7 +31,8 @@ def test_codex_fallback_success_does_not_trigger_a_redundant_final_pass():
 
 def test_final_codex_review_retries_up_to_its_own_budget():
     assert next_route("codex_final", result(Status.REPAIRABLE_FAILURE), "codex_final", {"codex_final": 1}) == "codex_final"
-    assert next_route("codex_final", result(Status.REPAIRABLE_FAILURE), "codex_final", {"codex_final": 3}) == "user_review"
+    assert next_route("codex_final", result(Status.REPAIRABLE_FAILURE), "codex_final", {"codex_final": 3}) == "codex_final"
+    assert next_route("codex_final", result(Status.REPAIRABLE_FAILURE), "codex_final", {"codex_final": 4}) == "user_review"
 
 
 def test_repairable_full_suite_browser_failure_returns_to_codex_final():
@@ -47,7 +48,7 @@ def test_repairable_full_suite_browser_failure_returns_to_codex_final():
         "browser",
         result(Status.REPAIRABLE_FAILURE),
         "codex_final",
-        {"codex_final": 3},
+        {"codex_final": 4},
     ) == "user_review"
 
 
