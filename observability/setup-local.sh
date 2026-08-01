@@ -6,9 +6,56 @@ env_file="$script_dir/.env"
 
 secret() { openssl rand -hex 32; }
 
+usage() {
+  cat <<'EOF'
+Usage: ./setup-local.sh [options]
+
+Create or start the one shared local Langfuse service.
+
+Options apply only when bootstrapping a brand-new Langfuse instance:
+  --email EMAIL       Initial administrator email (default: local@supervisor.invalid)
+  --name NAME         Initial administrator display name (default: Local Operator)
+  --password PASSWORD Initial administrator password (default: securely generated)
+  -h, --help          Show this help.
+
+Environment alternatives: LANGFUSE_SETUP_EMAIL, LANGFUSE_SETUP_NAME, and
+LANGFUSE_SETUP_PASSWORD. Existing Langfuse accounts are never overwritten.
+EOF
+}
+
+bootstrap_email="${LANGFUSE_SETUP_EMAIL:-local@supervisor.invalid}"
+bootstrap_name="${LANGFUSE_SETUP_NAME:-Local Operator}"
+bootstrap_password="${LANGFUSE_SETUP_PASSWORD:-}"
+account_options=false
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --email)
+      [[ $# -ge 2 ]] || { printf '%s\n' '--email requires a value.' >&2; exit 2; }
+      bootstrap_email="$2"; account_options=true; shift 2 ;;
+    --name)
+      [[ $# -ge 2 ]] || { printf '%s\n' '--name requires a value.' >&2; exit 2; }
+      bootstrap_name="$2"; account_options=true; shift 2 ;;
+    --password)
+      [[ $# -ge 2 ]] || { printf '%s\n' '--password requires a value.' >&2; exit 2; }
+      bootstrap_password="$2"; account_options=true; shift 2 ;;
+    -h|--help) usage; exit 0 ;;
+    *) printf 'Unknown option: %s\n' "$1" >&2; usage >&2; exit 2 ;;
+  esac
+done
+
+for value in "$bootstrap_email" "$bootstrap_name" "$bootstrap_password"; do
+  [[ "$value" != *$'\n'* && "$value" != *$'\r'* ]] || { printf '%s\n' 'Bootstrap account values cannot contain newlines.' >&2; exit 2; }
+done
+
 # Langfuse is a machine-wide shared service. A project clone must never create
 # another local stack just because its own observability/.env is absent.
 if curl --fail --silent --show-error --max-time 2 http://127.0.0.1:3001/ >/dev/null 2>&1; then
+  if [[ "$account_options" == true ]]; then
+    printf '%s\n' 'A shared Langfuse instance is already running; account options were not applied.' >&2
+    printf '%s\n' 'Existing accounts are preserved. Change them in Langfuse instead.' >&2
+    exit 2
+  fi
   printf 'A shared local Langfuse instance is already running at http://127.0.0.1:3001; reusing it.\n'
   exit 0
 fi
@@ -28,6 +75,7 @@ if [[ ! -f "$env_file" ]]; then
 fi
 
 if ! grep -q '^LANGFUSE_INIT_PROJECT_PUBLIC_KEY=' "$env_file"; then
+  [[ -n "$bootstrap_password" ]] || bootstrap_password="$(secret)"
   umask 077
   {
     printf 'LANGFUSE_INIT_ORG_ID=supervisor-local\n'
@@ -36,11 +84,15 @@ if ! grep -q '^LANGFUSE_INIT_PROJECT_PUBLIC_KEY=' "$env_file"; then
     printf 'LANGFUSE_INIT_PROJECT_NAME=Runbook Supervisor\n'
     printf 'LANGFUSE_INIT_PROJECT_PUBLIC_KEY=pk-lf-local-%s\n' "$(secret)"
     printf 'LANGFUSE_INIT_PROJECT_SECRET_KEY=sk-lf-local-%s\n' "$(secret)"
-    printf 'LANGFUSE_INIT_USER_EMAIL=local@supervisor.invalid\n'
-    printf 'LANGFUSE_INIT_USER_NAME=Local Operator\n'
-    printf 'LANGFUSE_INIT_USER_PASSWORD=%s\n' "$(secret)"
+    printf 'LANGFUSE_INIT_USER_EMAIL=%s\n' "$bootstrap_email"
+    printf 'LANGFUSE_INIT_USER_NAME=%s\n' "$bootstrap_name"
+    printf 'LANGFUSE_INIT_USER_PASSWORD=%s\n' "$bootstrap_password"
   } >> "$env_file"
   printf 'Created the local Runbook Supervisor project credentials.\n'
+elif [[ "$account_options" == true ]]; then
+  printf '%s\n' 'Local Langfuse bootstrap credentials already exist; account options were not applied.' >&2
+  printf '%s\n' 'Existing accounts are preserved. Change them in Langfuse instead.' >&2
+  exit 2
 fi
 
 supervisor_env="$script_dir/../.env"

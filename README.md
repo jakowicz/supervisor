@@ -346,6 +346,18 @@ cd observability
 ./setup-local.sh
 ```
 
+For a brand-new local instance, choose the initial Langfuse administrator
+instead of accepting the defaults:
+
+```bash
+./setup-local.sh --email you@example.com --name "Your Name" --password "choose-a-strong-password"
+```
+
+The equivalent environment variables are `LANGFUSE_SETUP_EMAIL`,
+`LANGFUSE_SETUP_NAME`, and `LANGFUSE_SETUP_PASSWORD`. These options apply only
+to the first bootstrap; the script deliberately refuses to overwrite an
+existing account or a running shared Langfuse service.
+
 The bootstrap creates a **Runbook Supervisor** project and local API keys,
 then enables telemetry in `.env`. Sign in at `http://127.0.0.1:3001` as
 `local@supervisor.invalid`; the generated password is stored only in
