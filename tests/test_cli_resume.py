@@ -2,7 +2,7 @@ import pytest
 
 from pathlib import Path
 
-from supervisor.cli import _can_recover_qwen, _expand_task_range, _qwen_session_to_resume, _recovered_qwen_event, _resume_stage, _run_summary
+from supervisor.cli import _can_recover_qwen, _completion_banner, _expand_task_range, _qwen_session_to_resume, _recovered_qwen_event, _resume_stage, _run_summary
 from supervisor.models import NextStep, RunEvent, Status, Task, TaskRun, WorkerResult
 
 
@@ -72,6 +72,20 @@ def test_compact_run_summary_excludes_raw_worker_evidence(tmp_path):
 
     assert "very large raw transcript" not in summary
     assert "supervisor-reports show run-42" in summary
+    assert summary.startswith("SUCCESS — TASK ACCEPTED")
+
+
+def test_completion_banner_marks_non_pass_runs_as_not_accepted():
+    run = TaskRun(
+        run_id="run-43",
+        task=Task(task_id="D010", title="Release journey"),
+        status=Status.NEEDS_USER_REVIEW,
+        route="needs_user_review",
+        worker_results=[],
+        events=[],
+    )
+
+    assert _completion_banner(run).startswith("NOT ACCEPTED — USER REVIEW REQUIRED")
 
 
 def test_task_range_expands_inclusive_zero_padded_task_ids():

@@ -272,7 +272,7 @@ def main() -> None:
         store.finish_task(run, _head_commit(repo_root) if run.status is Status.PASS else None)
     finally:
         store.close()
-    progress(f"FINAL {run.status.value} · report stored in SQLite and {database_path.parent / 'reports' / f'{run_id}.md'}")
+    progress(_completion_progress(run, database_path))
     if arguments.output_format == "json":
         print(json.dumps(model_to_dict(run), indent=2))
     else:
@@ -294,6 +294,7 @@ def _run_summary(run: TaskRun, database_path: Path) -> str:
 
     report_path = database_path.parent / "reports" / f"{run.run_id}.md"
     lines = [
+        _completion_banner(run),
         f"{run.task.task_id} · {run.status.value} · {run.route}",
         f"Run: {run.run_id}",
         "Stages:",
@@ -309,6 +310,29 @@ def _run_summary(run: TaskRun, database_path: Path) -> str:
         "Use --output-format json only when another program needs the full raw run payload.",
     ])
     return "\n".join(lines)
+
+
+def _completion_banner(run: TaskRun) -> str:
+    """Make the terminal's final outcome impossible to mistake for success."""
+
+    if run.status is Status.PASS:
+        return "SUCCESS — TASK ACCEPTED · all required supervisor stages passed."
+    return (
+        "NOT ACCEPTED — USER REVIEW REQUIRED · this task was not accepted, "
+        "committed, or advanced as a completed task."
+    )
+
+
+def _completion_progress(run: TaskRun, database_path: Path) -> str:
+    """Return the single-line live-log completion notice."""
+
+    report_path = database_path.parent / "reports" / f"{run.run_id}.md"
+    if run.status is Status.PASS:
+        return f"SUCCESS · {run.task.task_id} accepted · report stored in SQLite and {report_path}"
+    return (
+        f"NOT ACCEPTED · {run.task.task_id} requires user review · "
+        f"report stored in SQLite and {report_path}"
+    )
 
 
 def _can_recover_qwen(state: dict | None) -> bool:
