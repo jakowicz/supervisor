@@ -135,7 +135,10 @@ def configure(path: Path) -> None:
     existing = dotenv_values(path) if path.is_file() else {}
     values = {key: str(value) for key, value in existing.items() if value is not None}
     print("Configure the project-local supervisor. Press Enter to keep a shown value.")
-    values["SUPERVISOR_REPO_ROOT"] = _prompt("Project repository root", _value(existing, "SUPERVISOR_REPO_ROOT"))
+    values["SUPERVISOR_REPO_ROOT"] = _prompt(
+        "Application project directory agents may inspect and modify (normally ..)",
+        _value(existing, "SUPERVISOR_REPO_ROOT"),
+    )
     values["SUPERVISOR_DATABASE_PATH"] = _prompt("SQLite database path", _value(existing, "SUPERVISOR_DATABASE_PATH"))
     values["SUPERVISOR_DASHBOARD_PORT"] = _prompt("Preferred dashboard port (a free port is selected if busy)", _value(existing, "SUPERVISOR_DASHBOARD_PORT"))
     values["SUPERVISOR_WORKER_TIMEOUT_SECONDS"] = _prompt("Worker timeout in seconds", _value(existing, "SUPERVISOR_WORKER_TIMEOUT_SECONDS"))
