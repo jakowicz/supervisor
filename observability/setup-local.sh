@@ -6,6 +6,13 @@ env_file="$script_dir/.env"
 
 secret() { openssl rand -hex 32; }
 
+# Langfuse is a machine-wide shared service. A project clone must never create
+# another local stack just because its own observability/.env is absent.
+if curl --fail --silent --show-error --max-time 2 http://127.0.0.1:3001/ >/dev/null 2>&1; then
+  printf 'A shared local Langfuse instance is already running at http://127.0.0.1:3001; reusing it.\n'
+  exit 0
+fi
+
 if [[ ! -f "$env_file" ]]; then
   umask 077
   {

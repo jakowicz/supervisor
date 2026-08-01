@@ -32,10 +32,13 @@ supervisor init ~/Dev/my-new-project --python python3.11
 ```
 
 The command refuses a non-empty destination and never overwrites an existing
-project. It uses `git@github.com:jakowicz/supervisor.git` by default; use
+project. It also reuses the shared local Langfuse service at
+`http://127.0.0.1:3001`; only when that endpoint is absent does it run the
+local observability bootstrap. It uses `git@github.com:jakowicz/supervisor.git` by default; use
 `--supervisor-url <URL>` to select a fork or another remote. Use `--no-install`
 when creating the virtual environment and dependencies is not currently
-possible, then complete the install later from `<project>/supervisor`:
+possible, or `--no-observability` when configuring a remote/shared service
+yourself, then complete the install later from `<project>/supervisor`:
 
 ```zsh
 python3.11 -m venv .venv

@@ -8,6 +8,8 @@ import os
 import subprocess
 import tempfile
 from pathlib import Path
+from urllib.error import URLError
+from urllib.request import urlopen
 
 from dotenv import dotenv_values
 
@@ -173,12 +175,36 @@ def _append_gitignore(path: Path, entry: str) -> None:
     path.write_text(f"{existing}{newline}{entry}\n", encoding="utf-8")
 
 
+def local_langfuse_running() -> bool:
+    """Return whether the shared local Langfuse endpoint is reachable."""
+
+    try:
+        with urlopen("http://127.0.0.1:3001/", timeout=2) as response:
+            return 200 <= response.status < 500
+    except (OSError, URLError):
+        return False
+
+
+def setup_local_langfuse(supervisor_root: Path) -> None:
+    """Start one local Langfuse instance only when a shared one is absent."""
+
+    if local_langfuse_running():
+        print("Reusing the shared local Langfuse instance at http://127.0.0.1:3001.")
+        return
+    script = supervisor_root / "observability" / "setup-local.sh"
+    if not script.is_file():
+        raise RuntimeError(f"Local Langfuse bootstrap script is missing: {script}")
+    print("No local Langfuse instance is running; starting the shared local setup.")
+    _run(["bash", str(script)], cwd=supervisor_root)
+
+
 def initialise_project(
     project_root: Path,
     *,
     supervisor_url: str = DEFAULT_SUPERVISOR_URL,
     python: str = "python3",
     install: bool = True,
+    observability: bool = True,
 ) -> None:
     """Create an empty Git project ready to run scoped supervisor runbooks."""
 
@@ -212,10 +238,13 @@ def initialise_project(
         print("Installing supervisor dependencies")
         _run([str(venv_python), "-m", "pip", "install", "--no-build-isolation", "-e", ".[dev]"], cwd=project_root / "supervisor")
 
+    if observability:
+        setup_local_langfuse(project_root / "supervisor")
+
     print("Project ready.")
     print(f"1. Edit {runbooks / 'TEMPLATE.md'} and save it as your first task runbook.")
     print(f"2. Run: cd {project_root / 'supervisor'} && ./.venv/bin/supervisor configure")
-    print("3. Set explicit worker commands and write permissions before running a task.")
+    print("3. Set explicit worker commands, Langfuse project keys, and write permissions before running a task.")
 
 
 def main() -> None:
@@ -223,11 +252,12 @@ def main() -> None:
     commands = parser.add_subparsers(dest="command", required=True)
     configure_parser = commands.add_parser("configure", help="Interactively create or update an ignored .env configuration file.")
     configure_parser.add_argument("--config", type=Path, default=Path(".env"), help="Configuration file to write (default: .env).")
-    init_parser = commands.add_parser("init", help="Create an empty Git project with the supervisor submodule, runbooks, state ignore, and local install.")
+    init_parser = commands.add_parser("init", help="Create an empty Git project with the supervisor submodule, runbooks, state ignore, local install, and shared Langfuse setup.")
     init_parser.add_argument("project", type=Path, help="New or empty project directory to initialise.")
     init_parser.add_argument("--supervisor-url", default=DEFAULT_SUPERVISOR_URL, help="Git URL for the supervisor submodule.")
     init_parser.add_argument("--python", default="python3", help="Python interpreter used to create the project virtual environment.")
     init_parser.add_argument("--no-install", action="store_true", help="Create files and submodule but skip virtualenv and dependency installation.")
+    init_parser.add_argument("--no-observability", action="store_true", help="Do not reuse or start the shared local Langfuse setup.")
     arguments = parser.parse_args()
     if arguments.command == "configure":
         configure(arguments.config.expanduser().resolve())
@@ -238,6 +268,7 @@ def main() -> None:
                 supervisor_url=arguments.supervisor_url,
                 python=arguments.python,
                 install=not arguments.no_install,
+                observability=not arguments.no_observability,
             )
         except (RuntimeError, ValueError) as error:
             parser.error(str(error))
