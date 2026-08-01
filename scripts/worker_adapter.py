@@ -266,6 +266,13 @@ developer documentation whenever the change affects behaviour, setup, commands,
 architecture, design, or progress. If no documentation change is needed, state
 the reviewed files and explain why.
 
+For `final_verification`, the independent `test`, `browser`, and visual-review
+stages are the required verification gates. After repairing every concrete
+source/test failure supplied in this prompt, return `pass` so those gates run.
+Do not return `needs_user_review` solely because Flutter/Dart was deliberately
+left to the independent test stage. Return `needs_user_review` only for a real
+authority, safety, or irreducibly ambiguous product decision.
+
 For browser-impacting work, create or update a task-specific Playwright spec in
 `supervisor/browser/tests/changes/`, list it in `browser_coverage`,
 and revise stale checks. Keep `tests/smoke/` short and stable. For domain-only

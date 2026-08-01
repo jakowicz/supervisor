@@ -116,7 +116,7 @@ def main() -> None:
     )
     live_log_path.parent.mkdir(parents=True, exist_ok=True)
     recovered_qwen = None
-    if _can_recover_qwen(previous_state):
+    if not arguments.retry and _can_recover_qwen(previous_state):
         recovered_qwen = latest_qwen_result(database_path.parent / "live", task.task_id)
     if recovered_qwen and not arguments.retry:
         newest_qwen_log = qwen_logs(database_path.parent / "live", task.task_id)[0]

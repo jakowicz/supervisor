@@ -81,6 +81,7 @@ def test_final_codex_prompt_requires_requirements_review_and_repair():
     assert "retry this same Codex final-review stage" in prompt
     assert "Do\nnot run `flutter`, `dart`" in prompt
     assert "independent test stage" in prompt
+    assert "Do not return `needs_user_review` solely because Flutter/Dart" in prompt
 
 
 def test_static_browser_mode_tells_coders_to_leave_browser_evidence_to_qa(monkeypatch):
