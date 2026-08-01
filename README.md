@@ -6,6 +6,22 @@ return a structured `environment_failure` until an explicit command is configure
 
 ## Quick start
 
+### Install the Supervisor CLI
+
+Download the installer, review it if desired, then run it. It installs into
+`~/.local/share/supervisor` and links the commands into `~/.local/bin` without
+requiring administrator access:
+
+```zsh
+curl -fsSL https://raw.githubusercontent.com/jakowicz/supervisor/main/scripts/install.sh -o /tmp/supervisor-install.sh
+bash /tmp/supervisor-install.sh
+```
+
+If `~/.local/bin` is not already on your `PATH`, the installer prints the one
+`export PATH=...` line to add to your shell profile. Set
+`SUPERVISOR_PYTHON=/path/to/python` only when you need to override its automatic
+Python 3.10+ selection.
+
 ### New project
 
 From an existing Supervisor installation, create a ready-to-configure project:
