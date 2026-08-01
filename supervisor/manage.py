@@ -36,6 +36,13 @@ DEFAULTS = {
     "SUPERVISOR_OBSERVABILITY_ENABLED": "false",
     "SUPERVISOR_OBSERVABILITY_ENVIRONMENT": "local",
     "LANGFUSE_BASE_URL": "http://127.0.0.1:3001",
+    # These bundled adapters are safe defaults: they still need their
+    # respective CLI/provider installed, and editing remains disabled until
+    # the user explicitly enables SUPERVISOR_ALLOW_AUTONOMOUS_WRITES.
+    "QWEN_CODER_COMMAND": "./.venv/bin/python scripts/qwen_worker.py {task_file}",
+    "OPENHANDS_COMMAND": "./.venv/bin/python scripts/openhands_worker.py {task_file}",
+    "CODEX_COMMAND": "./.venv/bin/python scripts/codex_worker.py {task_file}",
+    "BROWSER_QA_COMMAND": "./.venv/bin/python scripts/browser_worker.py {task_file}",
 }
 
 DEFAULT_SUPERVISOR_URL = "git@github.com:jakowicz/supervisor.git"
@@ -136,7 +143,7 @@ def configure(path: Path) -> None:
     values["SUPERVISOR_AUTO_COMMIT"] = "true" if _yes_no("Commit accepted tasks automatically", _value(existing, "SUPERVISOR_AUTO_COMMIT") == "true") else "false"
     values["SUPERVISOR_AUTO_PUSH"] = "true" if _yes_no("Push accepted task commits automatically", _value(existing, "SUPERVISOR_AUTO_PUSH") == "true") else "false"
 
-    print("\nOptional agent adapters (leave blank to keep the current value):")
+    print("\nAgent adapters and models (press Enter to keep each shown value):")
     for key, label in (
         ("QWEN_CODER_COMMAND", "Qwen worker command"),
         ("OPENHANDS_COMMAND", "OpenHands worker command"),

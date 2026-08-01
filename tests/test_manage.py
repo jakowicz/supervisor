@@ -69,6 +69,13 @@ def test_choose_python_rejects_an_incompatible_explicit_override(monkeypatch):
         raise AssertionError("Expected an incompatible Python override to be rejected.")
 
 
+def test_configure_has_safe_bundled_worker_command_defaults():
+    assert manage.DEFAULTS["QWEN_CODER_COMMAND"] == "./.venv/bin/python scripts/qwen_worker.py {task_file}"
+    assert manage.DEFAULTS["OPENHANDS_COMMAND"] == "./.venv/bin/python scripts/openhands_worker.py {task_file}"
+    assert manage.DEFAULTS["CODEX_COMMAND"] == "./.venv/bin/python scripts/codex_worker.py {task_file}"
+    assert manage.DEFAULTS["BROWSER_QA_COMMAND"] == "./.venv/bin/python scripts/browser_worker.py {task_file}"
+
+
 def test_setup_local_langfuse_reuses_a_running_instance(monkeypatch, tmp_path: Path, capsys):
     monkeypatch.setattr(manage, "local_langfuse_running", lambda: True)
     monkeypatch.setattr(manage, "_run", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("should not bootstrap")))

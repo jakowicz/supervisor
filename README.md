@@ -26,6 +26,13 @@ dashboard preference, and Langfuse project credentials. It reuses the one
 shared Langfuse service at `http://127.0.0.1:3001` when it is already running.
 Use `--non-interactive` only for automated provisioning.
 
+Every setup prompt shows a safe default where one exists. This includes paths,
+database location, dashboard port, timeouts, retry budgets, Git policy, the
+shared Langfuse endpoint, and the bundled Qwen, OpenHands, Codex, and browser
+worker commands. Provider-specific values—model names, API keys, and an
+independent visual-review command—remain blank by design rather than being
+guessed.
+
 ### Existing project
 
 Add the Supervisor as a submodule, install it, then configure the project:
