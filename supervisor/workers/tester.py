@@ -18,6 +18,9 @@ def run(task: Task, repo_root: Path, dry_run: bool = False) -> WorkerResult:
     commands = [shlex.split(configured_command)] if configured_command else [
         ["flutter", "analyze"], ["flutter", "test"], ["flutter", "build", "web", "--release"],
     ]
+    release_docs_check = repo_root / "scripts" / "check_release_qa_docs.sh"
+    if not configured_command and release_docs_check.is_file() and os.access(release_docs_check, os.X_OK):
+        commands.append(["scripts/check_release_qa_docs.sh"])
     if configured_command and not commands[0]:
         return WorkerResult(
             status=Status.ENVIRONMENT_FAILURE,
@@ -38,8 +41,8 @@ def run(task: Task, repo_root: Path, dry_run: bool = False) -> WorkerResult:
             )
     return WorkerResult(
         status=Status.PASS,
-        summary=(f"Configured project checks passed for {task.task_id}." if configured_command else f"Flutter checks passed for {task.task_id}."),
-        test_result=(f"{' '.join(commands[0])} passed." if configured_command else "flutter analyze, flutter test, and flutter build web --release passed."),
+        summary=(f"Configured project checks passed for {task.task_id}." if configured_command else f"Flutter and project-contract checks passed for {task.task_id}."),
+        test_result=(f"{' '.join(commands[0])} passed." if configured_command else "flutter analyze, flutter test, flutter build web --release, and available project-contract checks passed."),
         evidence=Evidence(test_log="\n".join(logs)),
         recommended_next_step=NextStep.COMPLETE,
     )
