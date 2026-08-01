@@ -96,6 +96,17 @@ def _yes_no(label: str, default: bool) -> bool:
     return default if not value else value in {"y", "yes"}
 
 
+def _project_path_prompt(default: Path | None = None) -> Path:
+    """Prompt for the only required project-init value before other setup."""
+
+    shown_default = str(default) if default else ""
+    while True:
+        value = _prompt("Project directory", shown_default)
+        if value:
+            return Path(value).expanduser().resolve()
+        print("A project directory is required.")
+
+
 def _value(values: dict[str, str | None], key: str) -> str:
     return str(values.get(key) or os.getenv(key) or DEFAULTS.get(key, ""))
 
@@ -319,7 +330,7 @@ def main() -> None:
     configure_parser = commands.add_parser("configure", help="Interactively create or update an ignored .env configuration file.")
     configure_parser.add_argument("--config", type=Path, default=Path(".env"), help="Configuration file to write (default: .env).")
     init_parser = commands.add_parser("init", help="Interactively create and configure an empty Git project with the supervisor, runbooks, and shared Langfuse setup.")
-    init_parser.add_argument("project", type=Path, help="New or empty project directory to initialise.")
+    init_parser.add_argument("project", type=Path, nargs="?", help="Optional new or empty project directory; prompted for when omitted.")
     init_parser.add_argument("--supervisor-url", default=DEFAULT_SUPERVISOR_URL, help="Git URL for the supervisor submodule.")
     init_parser.add_argument("--python", help="Optional Python 3.10+ interpreter override; by default the best compatible interpreter on PATH is selected.")
     init_parser.add_argument("--no-install", action="store_true", help="Create files and submodule but skip virtualenv and dependency installation.")
@@ -330,6 +341,15 @@ def main() -> None:
         configure(arguments.config.expanduser().resolve())
     if arguments.command == "init":
         try:
+            if arguments.non_interactive and arguments.project is None:
+                parser.error("project is required with --non-interactive")
+            project_path = (
+                arguments.project.expanduser().resolve()
+                if arguments.non_interactive
+                else _project_path_prompt(arguments.project.expanduser().resolve() if arguments.project else None)
+            )
+            if project_path.exists() and any(project_path.iterdir()):
+                parser.error(f"Project directory is not empty: {project_path}")
             observability = not arguments.no_observability
             bootstrap_account: dict[str, str | None] = {}
             if observability and not arguments.non_interactive and not local_langfuse_running():
@@ -343,7 +363,7 @@ def main() -> None:
                 else:
                     observability = False
             initialise_project(
-                arguments.project,
+                project_path,
                 supervisor_url=arguments.supervisor_url,
                 python=arguments.python,
                 install=not arguments.no_install,
@@ -352,7 +372,7 @@ def main() -> None:
             )
             if not arguments.non_interactive:
                 print("\nConfigure this project's supervisor:")
-                configure(arguments.project.expanduser().resolve() / "supervisor" / ".env")
+                configure(project_path / "supervisor" / ".env")
         except (RuntimeError, ValueError) as error:
             parser.error(str(error))
 

@@ -76,6 +76,16 @@ def test_configure_has_safe_bundled_worker_command_defaults():
     assert manage.DEFAULTS["BROWSER_QA_COMMAND"] == "./.venv/bin/python scripts/browser_worker.py {task_file}"
 
 
+def test_project_path_prompt_requires_a_path(monkeypatch, tmp_path: Path, capsys):
+    answers = iter(["", str(tmp_path / "new-project")])
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
+
+    result = manage._project_path_prompt()
+
+    assert result == (tmp_path / "new-project").resolve()
+    assert "A project directory is required." in capsys.readouterr().out
+
+
 def test_setup_local_langfuse_reuses_a_running_instance(monkeypatch, tmp_path: Path, capsys):
     monkeypatch.setattr(manage, "local_langfuse_running", lambda: True)
     monkeypatch.setattr(manage, "_run", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("should not bootstrap")))

@@ -27,10 +27,12 @@ Python 3.10+ selection.
 From an existing Supervisor installation, create a ready-to-configure project:
 
 ```zsh
-supervisor init ~/Dev/my-project
-cd ~/Dev/my-project/supervisor
-./.venv/bin/supervisor configure
+supervisor init
 ```
+
+The first question asks for the new project directory; enter the location you
+want to initialise. You may still pass that directory as an optional argument
+when convenient.
 
 `init` automatically selects a compatible Python 3.10+ interpreter from your
 `PATH`, then creates a Git repository, adds this repository as `supervisor/`, creates
@@ -99,11 +101,11 @@ directory, a starter runbook, a root `.state/` ignore rule, an ignored local
 configuration file, and an installed virtual environment:
 
 ```zsh
-supervisor init ~/Dev/my-new-project
+supervisor init
 ```
 
-The command refuses a non-empty destination and never overwrites an existing
-project. It also reuses the shared local Langfuse service at
+The command first asks for the new project directory, refuses a non-empty
+destination, and never overwrites an existing project. It also reuses the shared local Langfuse service at
 `http://127.0.0.1:3001`; only when that endpoint is absent does it run the
 local observability bootstrap. It uses `git@github.com:jakowicz/supervisor.git` by default; use
 `--supervisor-url <URL>` to select a fork or another remote. Use `--no-install`
