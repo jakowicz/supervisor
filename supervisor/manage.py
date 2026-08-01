@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import getpass
 import os
+import shutil
 import subprocess
 import tempfile
 from pathlib import Path
@@ -38,6 +39,7 @@ DEFAULTS = {
 }
 
 DEFAULT_SUPERVISOR_URL = "git@github.com:jakowicz/supervisor.git"
+MINIMUM_PYTHON_VERSION = (3, 10)
 
 RUNBOOK_TEMPLATE = """---
 task_id: T001
@@ -171,6 +173,37 @@ def _run(command: list[str], *, cwd: Path | None = None) -> None:
         raise RuntimeError(f"Command failed ({error.returncode}): {rendered}") from error
 
 
+def choose_python(requested: str | None = None) -> str:
+    """Find a Python 3.10+ interpreter on PATH, or validate an override."""
+
+    candidates = [requested] if requested else [
+        "python3.14", "python3.13", "python3.12", "python3.11", "python3.10", "python3", "python",
+    ]
+    for candidate in candidates:
+        if not candidate:
+            continue
+        resolved = shutil.which(candidate)
+        if not resolved:
+            continue
+        probe = subprocess.run(
+            [resolved, "-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"],
+            text=True,
+            capture_output=True,
+            check=False,
+        )
+        if probe.returncode != 0:
+            continue
+        try:
+            major, minor = (int(part) for part in probe.stdout.strip().split(".", maxsplit=1))
+        except ValueError:
+            continue
+        if (major, minor) >= MINIMUM_PYTHON_VERSION:
+            return resolved
+    if requested:
+        raise RuntimeError(f"{requested!r} is not an available Python {MINIMUM_PYTHON_VERSION[0]}.{MINIMUM_PYTHON_VERSION[1]}+ interpreter.")
+    raise RuntimeError("No Python 3.10+ interpreter was found on PATH. Install one or pass --python <path>.")
+
+
 def _append_gitignore(path: Path, entry: str) -> None:
     existing = path.read_text(encoding="utf-8") if path.is_file() else ""
     if entry in {line.strip() for line in existing.splitlines()}:
@@ -219,7 +252,7 @@ def initialise_project(
     project_root: Path,
     *,
     supervisor_url: str = DEFAULT_SUPERVISOR_URL,
-    python: str = "python3",
+    python: str | None = None,
     install: bool = True,
     observability: bool = True,
     langfuse_email: str | None = None,
@@ -252,8 +285,9 @@ def initialise_project(
 
     if install:
         venv = project_root / "supervisor" / ".venv"
-        print(f"Creating virtual environment with {python}")
-        _run([python, "-m", "venv", str(venv)], cwd=project_root)
+        selected_python = choose_python(python)
+        print(f"Creating virtual environment with {selected_python}")
+        _run([selected_python, "-m", "venv", str(venv)], cwd=project_root)
         venv_python = venv / "bin" / "python"
         print("Installing supervisor dependencies")
         _run([str(venv_python), "-m", "pip", "install", "--no-build-isolation", "-e", ".[dev]"], cwd=project_root / "supervisor")
@@ -280,7 +314,7 @@ def main() -> None:
     init_parser = commands.add_parser("init", help="Interactively create and configure an empty Git project with the supervisor, runbooks, and shared Langfuse setup.")
     init_parser.add_argument("project", type=Path, help="New or empty project directory to initialise.")
     init_parser.add_argument("--supervisor-url", default=DEFAULT_SUPERVISOR_URL, help="Git URL for the supervisor submodule.")
-    init_parser.add_argument("--python", default="python3", help="Python interpreter used to create the project virtual environment.")
+    init_parser.add_argument("--python", help="Optional Python 3.10+ interpreter override; by default the best compatible interpreter on PATH is selected.")
     init_parser.add_argument("--no-install", action="store_true", help="Create files and submodule but skip virtualenv and dependency installation.")
     init_parser.add_argument("--no-observability", action="store_true", help="Do not reuse or start the shared local Langfuse setup.")
     init_parser.add_argument("--non-interactive", action="store_true", help="Use defaults and skip all setup prompts; intended for automation.")

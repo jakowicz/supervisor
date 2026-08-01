@@ -40,6 +40,35 @@ def test_initialise_project_rejects_non_empty_directory(tmp_path: Path):
         raise AssertionError("Expected non-empty project directory to be rejected.")
 
 
+def test_choose_python_prefers_a_compatible_interpreter_on_path(monkeypatch):
+    monkeypatch.setattr(manage.shutil, "which", lambda command: {"python3.11": "/tools/python3.11"}.get(command))
+
+    class Process:
+        returncode = 0
+        stdout = "3.11\n"
+
+    monkeypatch.setattr(manage.subprocess, "run", lambda *_args, **_kwargs: Process())
+
+    assert manage.choose_python() == "/tools/python3.11"
+
+
+def test_choose_python_rejects_an_incompatible_explicit_override(monkeypatch):
+    monkeypatch.setattr(manage.shutil, "which", lambda _command: "/tools/python3")
+
+    class Process:
+        returncode = 0
+        stdout = "3.9\n"
+
+    monkeypatch.setattr(manage.subprocess, "run", lambda *_args, **_kwargs: Process())
+
+    try:
+        manage.choose_python("python3")
+    except RuntimeError as error:
+        assert "not an available Python" in str(error)
+    else:
+        raise AssertionError("Expected an incompatible Python override to be rejected.")
+
+
 def test_setup_local_langfuse_reuses_a_running_instance(monkeypatch, tmp_path: Path, capsys):
     monkeypatch.setattr(manage, "local_langfuse_running", lambda: True)
     monkeypatch.setattr(manage, "_run", lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("should not bootstrap")))

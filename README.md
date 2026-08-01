@@ -11,12 +11,13 @@ return a structured `environment_failure` until an explicit command is configure
 From an existing Supervisor installation, create a ready-to-configure project:
 
 ```zsh
-supervisor init ~/Dev/my-project --python python3.11
+supervisor init ~/Dev/my-project
 cd ~/Dev/my-project/supervisor
 ./.venv/bin/supervisor configure
 ```
 
-`init` creates a Git repository, adds this repository as `supervisor/`, creates
+`init` automatically selects a compatible Python 3.10+ interpreter from your
+`PATH`, then creates a Git repository, adds this repository as `supervisor/`, creates
 `runbooks/TEMPLATE.md`, configures ignored root `.state/` evidence storage, and
 installs the local virtual environment. It is interactive: it asks for the
 initial shared-Langfuse account only when no local service is running, then
@@ -75,7 +76,7 @@ directory, a starter runbook, a root `.state/` ignore rule, an ignored local
 configuration file, and an installed virtual environment:
 
 ```zsh
-supervisor init ~/Dev/my-new-project --python python3.11
+supervisor init ~/Dev/my-new-project
 ```
 
 The command refuses a non-empty destination and never overwrites an existing
