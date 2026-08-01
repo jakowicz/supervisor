@@ -34,6 +34,23 @@ def test_final_codex_review_retries_up_to_its_own_budget():
     assert next_route("codex_final", result(Status.REPAIRABLE_FAILURE), "codex_final", {"codex_final": 3}) == "user_review"
 
 
+def test_repairable_full_suite_browser_failure_returns_to_codex_final():
+    """Every-fifth-task full-suite failures receive the same bounded repair loop."""
+
+    assert next_route(
+        "browser",
+        result(Status.REPAIRABLE_FAILURE),
+        "codex_final",
+        {"codex_final": 1},
+    ) == "codex_final"
+    assert next_route(
+        "browser",
+        result(Status.REPAIRABLE_FAILURE),
+        "codex_final",
+        {"codex_final": 3},
+    ) == "user_review"
+
+
 def test_each_fresh_task_starts_with_a_full_qwen_budget():
     assert next_agent("qwen", {}) == "qwen"
     assert next_agent("qwen", {"qwen": 1}) == "openhands"
