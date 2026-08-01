@@ -149,22 +149,30 @@ def test_project_path_prompt_requires_a_path(monkeypatch, tmp_path: Path, capsys
 
 
 def test_update_workspace_fast_forwards_and_reinstalls(monkeypatch, tmp_path: Path):
+    checkout = tmp_path / "supervisor"
+    checkout.mkdir()
+    (checkout / "pyproject.toml").write_text("", encoding="utf-8")
+    (checkout / ".git").mkdir()
     commands: list[tuple[list[str], Path | None]] = []
-    monkeypatch.setattr(manage, "_git_output", lambda command, *, cwd: str(tmp_path) if command[1] == "rev-parse" else "")
+    monkeypatch.setattr(manage, "_git_output", lambda command, *, cwd: str(checkout) if command[1] == "rev-parse" else "")
     monkeypatch.setattr(manage, "_run", lambda command, *, cwd=None: commands.append((command, cwd)))
     monkeypatch.setattr(manage.sys, "executable", "/tools/python")
 
     result = manage.update_workspace(tmp_path)
 
-    assert result == tmp_path
+    assert result == checkout
     assert commands == [
-        (["git", "pull", "--ff-only", "origin", "main"], tmp_path),
-        (["/tools/python", "-m", "pip", "install", "-e", ".[dev]"], tmp_path),
+        (["git", "pull", "--ff-only", "origin", "main"], checkout),
+        (["/tools/python", "-m", "pip", "install", "-e", ".[dev]"], checkout),
     ]
 
 
 def test_update_workspace_refuses_tracked_changes(monkeypatch, tmp_path: Path):
-    monkeypatch.setattr(manage, "_git_output", lambda command, *, cwd: str(tmp_path) if command[1] == "rev-parse" else " M README.md")
+    checkout = tmp_path / "supervisor"
+    checkout.mkdir()
+    (checkout / "pyproject.toml").write_text("", encoding="utf-8")
+    (checkout / ".git").mkdir()
+    monkeypatch.setattr(manage, "_git_output", lambda command, *, cwd: str(checkout) if command[1] == "rev-parse" else " M README.md")
 
     try:
         manage.update_workspace(tmp_path)
@@ -172,6 +180,15 @@ def test_update_workspace_refuses_tracked_changes(monkeypatch, tmp_path: Path):
         assert "local changes" in str(error)
     else:
         raise AssertionError("Expected a dirty Supervisor checkout to be rejected.")
+
+
+def test_project_supervisor_checkout_rejects_unrelated_directory(tmp_path: Path):
+    try:
+        manage.project_supervisor_checkout(tmp_path)
+    except RuntimeError as error:
+        assert "No project Supervisor checkout" in str(error)
+    else:
+        raise AssertionError("Expected a directory without supervisor/ to be rejected.")
 
 
 def test_setup_local_langfuse_reuses_a_running_instance(monkeypatch, tmp_path: Path, capsys):

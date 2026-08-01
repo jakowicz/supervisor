@@ -333,20 +333,35 @@ def _git_output(command: list[str], *, cwd: Path) -> str:
     return result.stdout.strip()
 
 
-def update_workspace(start: Path | None = None) -> Path:
-    """Fast-forward the invoked Supervisor checkout and refresh its CLI tools."""
+def project_supervisor_checkout(start: Path) -> Path:
+    """Find the nearest project-owned `supervisor/` checkout from a cwd."""
 
-    package_root = (start or Path(__file__).resolve().parents[1]).resolve()
+    current = start.expanduser().resolve()
+    candidates = [current] if current.name == "supervisor" else []
+    candidates.extend(parent / "supervisor" for parent in (current, *current.parents))
+    for candidate in candidates:
+        if (candidate / "pyproject.toml").is_file() and (candidate / ".git").exists():
+            return candidate
+    raise RuntimeError(
+        f"No project Supervisor checkout was found from {current}. Run this command from a project containing supervisor/."
+    )
+
+
+def update_workspace(start: Path | None = None) -> Path:
+    """Fast-forward the current project's Supervisor checkout and refresh it."""
+
+    package_root = project_supervisor_checkout(start or Path.cwd())
     repository_root = Path(_git_output(["git", "rev-parse", "--show-toplevel"], cwd=package_root))
     if _git_output(["git", "status", "--porcelain"], cwd=repository_root):
         raise RuntimeError(
             f"Refusing to update a Supervisor checkout with local changes: {repository_root}. "
             "Commit, stash, or discard those changes first."
         )
-    print(f"Updating Supervisor tools in {repository_root}")
+    print(f"Updating this project's Supervisor checkout in {repository_root}")
     _run(["git", "pull", "--ff-only", "origin", "main"], cwd=repository_root)
-    _run([sys.executable, "-m", "pip", "install", "-e", ".[dev]"], cwd=repository_root)
-    print("Supervisor tools are up to date.")
+    project_python = repository_root / ".venv" / "bin" / "python"
+    _run([str(project_python) if project_python.is_file() else sys.executable, "-m", "pip", "install", "-e", ".[dev]"], cwd=repository_root)
+    print("Project Supervisor tools are up to date. Commit the changed supervisor submodule pointer in the parent project when ready.")
     return repository_root
 
 
@@ -495,13 +510,13 @@ def main() -> None:
     init_parser.add_argument("--no-install", action="store_true", help="Create files and submodule but skip virtualenv and dependency installation.")
     init_parser.add_argument("--no-observability", action="store_true", help="Do not reuse or start the shared local Langfuse setup.")
     init_parser.add_argument("--non-interactive", action="store_true", help="Use defaults and skip all setup prompts; intended for automation.")
-    commands.add_parser("update", help="Fast-forward this Supervisor checkout from origin/main and reinstall its CLI tools.")
+    commands.add_parser("update", help="Fast-forward the current project's supervisor/ checkout from origin/main and reinstall its CLI tools.")
     arguments = parser.parse_args()
     if arguments.command == "configure":
         configure(arguments.config.expanduser().resolve())
     if arguments.command == "update":
         try:
-            update_workspace()
+            update_workspace(Path.cwd())
         except RuntimeError as error:
             parser.error(str(error))
     if arguments.command == "init":
