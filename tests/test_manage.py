@@ -99,7 +99,8 @@ def test_model_choices_prefer_qwen_and_terra(monkeypatch):
     assert manage._choose_codex_model("") == "gpt-5.6-terra"
 
 
-def test_shared_langfuse_credentials_reads_bootstrap_key_pair(tmp_path: Path):
+def test_shared_langfuse_credentials_reads_bootstrap_key_pair(monkeypatch, tmp_path: Path):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
     supervisor_root = tmp_path / "supervisor"
     observability = supervisor_root / "observability"
     observability.mkdir(parents=True)
@@ -120,7 +121,8 @@ def test_configure_langfuse_starts_then_reuses_discovered_local_project(monkeypa
     running = iter([False, True])
     monkeypatch.setattr(manage, "local_langfuse_running", lambda: next(running))
     monkeypatch.setattr(manage, "_yes_no", lambda *_args, **_kwargs: True)
-    monkeypatch.setattr(manage, "setup_local_langfuse", lambda root: calls.append(root))
+    monkeypatch.setattr(manage, "prompt_initial_langfuse_account", lambda: {"email": "admin@example.com", "name": "Admin", "password": "password"})
+    monkeypatch.setattr(manage, "setup_local_langfuse", lambda root, **account: calls.append((root, account)))
     monkeypatch.setattr(
         manage,
         "shared_langfuse_credentials",
@@ -131,7 +133,7 @@ def test_configure_langfuse_starts_then_reuses_discovered_local_project(monkeypa
 
     manage.configure_langfuse(config, values)
 
-    assert calls == [config.parent]
+    assert calls == [(config.parent, {"email": "admin@example.com", "name": "Admin", "password": "password"})]
     assert values["LANGFUSE_PUBLIC_KEY"] == "pk"
     assert values["LANGFUSE_SECRET_KEY"] == "sk"
 

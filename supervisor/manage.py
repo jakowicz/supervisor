@@ -212,13 +212,25 @@ def shared_langfuse_credentials(supervisor_root: Path) -> dict[str, str]:
     return {}
 
 
+def prompt_initial_langfuse_account() -> dict[str, str]:
+    """Collect only the account values needed for a brand-new local service."""
+
+    print("Supervisor will install/start the shared local Langfuse service.")
+    print("Choose its initial administrator account (the password may be left blank to generate one securely):")
+    return {
+        "email": _prompt("Initial Langfuse username (email)", "local@supervisor.invalid"),
+        "name": _prompt("Initial Langfuse display name", "Local Operator"),
+        "password": _prompt("Initial Langfuse password", "", secret=True),
+    }
+
+
 def configure_langfuse(path: Path, values: dict[str, str]) -> None:
     """Use/start shared local Langfuse, falling back to an explicit key prompt."""
 
     supervisor_root = path.parent
     if not local_langfuse_running():
         if _yes_no("Local Langfuse is not running. Install/start the shared local service now", True):
-            setup_local_langfuse(supervisor_root)
+            setup_local_langfuse(supervisor_root, **prompt_initial_langfuse_account())
         else:
             print("Langfuse was not started. Enter credentials for an existing remote or local project.")
     if not values.get("LANGFUSE_PUBLIC_KEY") or not values.get("LANGFUSE_SECRET_KEY"):
@@ -506,12 +518,13 @@ def main() -> None:
             observability = not arguments.no_observability
             bootstrap_account: dict[str, str | None] = {}
             if observability and not arguments.non_interactive and not local_langfuse_running():
-                print("\nNo shared local Langfuse instance is running. Configure its initial administrator:")
+                print("\nNo shared local Langfuse instance is running.")
                 if _yes_no("Start shared local Langfuse now", True):
+                    account = prompt_initial_langfuse_account()
                     bootstrap_account = {
-                        "langfuse_email": _prompt("Initial Langfuse email", "local@supervisor.invalid"),
-                        "langfuse_name": _prompt("Initial Langfuse display name", "Local Operator"),
-                        "langfuse_password": _prompt("Initial Langfuse password (leave blank to generate securely)", "", secret=True),
+                        "langfuse_email": account["email"],
+                        "langfuse_name": account["name"],
+                        "langfuse_password": account["password"],
                     }
                 else:
                     observability = False
