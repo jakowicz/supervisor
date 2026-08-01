@@ -45,7 +45,7 @@ fi
 printf 'Creating virtual environment with %s\n' "$python_bin"
 "$python_bin" -m venv "$install_dir/.venv"
 printf 'Installing Supervisor CLI\n'
-"$install_dir/.venv/bin/python" -m pip install --no-build-isolation -e "$install_dir[dev]"
+"$install_dir/.venv/bin/python" -m pip install -e "$install_dir[dev]"
 
 mkdir -p "$bin_dir"
 for command_name in supervisor supervisor-run supervisor-reports supervisor-dashboard supervisor-observability-import; do

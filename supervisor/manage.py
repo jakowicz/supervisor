@@ -212,7 +212,7 @@ def update_workspace(start: Path | None = None) -> Path:
         )
     print(f"Updating Supervisor tools in {repository_root}")
     _run(["git", "pull", "--ff-only", "origin", "main"], cwd=repository_root)
-    _run([sys.executable, "-m", "pip", "install", "--no-build-isolation", "-e", ".[dev]"], cwd=repository_root)
+    _run([sys.executable, "-m", "pip", "install", "-e", ".[dev]"], cwd=repository_root)
     print("Supervisor tools are up to date.")
     return repository_root
 
@@ -334,7 +334,7 @@ def initialise_project(
         _run([selected_python, "-m", "venv", str(venv)], cwd=project_root)
         venv_python = venv / "bin" / "python"
         print("Installing supervisor dependencies")
-        _run([str(venv_python), "-m", "pip", "install", "--no-build-isolation", "-e", ".[dev]"], cwd=project_root / "supervisor")
+        _run([str(venv_python), "-m", "pip", "install", "-e", ".[dev]"], cwd=project_root / "supervisor")
 
     if observability:
         setup_local_langfuse(

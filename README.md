@@ -69,7 +69,7 @@ Add the Supervisor as a submodule, install it, then configure the project:
 git submodule add git@github.com:jakowicz/supervisor.git supervisor
 cd supervisor
 python3.11 -m venv .venv
-./.venv/bin/python -m pip install --no-build-isolation -e '.[dev]'
+./.venv/bin/python -m pip install -e '.[dev]'
 ./.venv/bin/supervisor configure
 ```
 
@@ -125,7 +125,7 @@ yourself, then complete the install later from `<project>/supervisor`:
 
 ```zsh
 python3.11 -m venv .venv
-./.venv/bin/python -m pip install --no-build-isolation -e '.[dev]'
+./.venv/bin/python -m pip install -e '.[dev]'
 ./.venv/bin/supervisor configure
 ```
 

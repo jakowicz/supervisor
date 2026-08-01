@@ -97,7 +97,7 @@ def test_update_workspace_fast_forwards_and_reinstalls(monkeypatch, tmp_path: Pa
     assert result == tmp_path
     assert commands == [
         (["git", "pull", "--ff-only", "origin", "main"], tmp_path),
-        (["/tools/python", "-m", "pip", "install", "--no-build-isolation", "-e", ".[dev]"], tmp_path),
+        (["/tools/python", "-m", "pip", "install", "-e", ".[dev]"], tmp_path),
     ]
 
 
