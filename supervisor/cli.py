@@ -39,7 +39,7 @@ def main() -> None:
     parser.add_argument(
         "--retry",
         action="store_true",
-        help="Restart an unfinished or needs-review task at the primary Qwen stage while preserving its worktree and durable history.",
+        help="Reopen a task at the primary Qwen stage while preserving its worktree and durable history; use this to re-verify an accepted task.",
     )
     parser.add_argument(
         "--output-format",
@@ -86,7 +86,7 @@ def main() -> None:
     # caller can intentionally make a new task/runbook when scope changes;
     # blindly sending an already accepted task back to a slow coding model is
     # both wasteful and risky.
-    if previous_state and previous_state.get("status") == "accepted":
+    if _should_skip_accepted_task(previous_state, arguments.retry, repo_root):
         accepted_commit = previous_state.get("accepted_commit")
         if accepted_commit and _commit_exists(repo_root, accepted_commit):
             print(
@@ -287,6 +287,23 @@ def _commit_exists(repo_root: Path, commit: str) -> bool:
         stderr=subprocess.DEVNULL,
         check=False,
     ).returncode == 0
+
+
+def _should_skip_accepted_task(
+    state: dict | None,
+    retry_requested: bool,
+    repo_root: Path,
+) -> bool:
+    """Keep accepted tasks immutable unless the caller explicitly retries.
+
+    ``--retry`` is an operator override for a repaired policy or an explicit
+    request to repeat verification. The prior SQLite evidence is retained.
+    """
+
+    if retry_requested or not state or state.get("status") != "accepted":
+        return False
+    accepted_commit = state.get("accepted_commit")
+    return bool(accepted_commit and _commit_exists(repo_root, str(accepted_commit)))
 
 
 def _run_summary(run: TaskRun, database_path: Path) -> str:

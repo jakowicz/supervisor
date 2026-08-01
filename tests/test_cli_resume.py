@@ -2,7 +2,7 @@ import pytest
 
 from pathlib import Path
 
-from supervisor.cli import _can_recover_qwen, _completion_banner, _expand_task_range, _qwen_session_to_resume, _recovered_qwen_event, _resume_stage, _run_summary
+from supervisor.cli import _can_recover_qwen, _completion_banner, _expand_task_range, _qwen_session_to_resume, _recovered_qwen_event, _resume_stage, _run_summary, _should_skip_accepted_task
 from supervisor.models import NextStep, RunEvent, Status, Task, TaskRun, WorkerResult
 
 
@@ -18,6 +18,14 @@ def test_resume_restores_a_qwen_session_for_an_unfinished_task():
     assert _qwen_session_to_resume({"status": "interrupted", "agent_session_id": "qwen-session"}) == "qwen-session"
     assert _qwen_session_to_resume({"status": "accepted", "agent_session_id": "qwen-session"}) is None
     assert _qwen_session_to_resume({"status": "interrupted"}) is None
+
+
+def test_retry_reopens_an_accepted_task_for_verification(monkeypatch, tmp_path):
+    state = {"status": "accepted", "accepted_commit": "abc123"}
+    monkeypatch.setattr("supervisor.cli._commit_exists", lambda *_args: True)
+
+    assert _should_skip_accepted_task(state, False, tmp_path) is True
+    assert _should_skip_accepted_task(state, True, tmp_path) is False
 
 
 def test_valid_qwen_evidence_can_be_recovered_from_any_unfinished_state():
