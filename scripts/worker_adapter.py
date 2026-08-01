@@ -199,10 +199,17 @@ solution: first inspect the runbook acceptance criteria and the actual changes,
 then run the most relevant checks. Do not reimplement correct work or broaden
 scope. If a criterion is incomplete, a test is missing, documentation is stale,
 or a check exposes a defect, fix it in this pass and rerun the affected checks.
-Return `pass` only when every criterion is genuinely verified. Return
-`repairable_failure` with concrete remaining evidence only when you cannot
-finish the repair; the supervisor will retry this same Codex final-review stage
-up to its configured limit.
+The deterministic `test` stage which follows this review is authoritative for
+Flutter analysis, Flutter tests, builds, and project verification scripts. Do
+not run `flutter`, `dart`, or an SDK/bootstrap command from this Codex sandbox:
+those tools may legitimately write SDK caches outside the worktree and require
+an unavailable interactive approval. Do not report a repairable failure merely
+because such a command cannot run here. Instead, review the implementation and
+its focused source/test evidence, repair any clear gap, then return `pass` to
+hand the candidate to the independent test stage. Return `repairable_failure`
+only when a concrete implementation or acceptance gap remains that you cannot
+finish; the supervisor will retry this same Codex final-review stage up to its
+configured limit.
 """
     return f"""You are the coding worker for one isolated runbook task.
 

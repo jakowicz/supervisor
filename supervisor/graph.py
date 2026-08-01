@@ -52,6 +52,19 @@ def create_graph(config: SupervisorConfig):
     def worker_node(stage: str, agent: str, model: str, runner: Callable[[Task], WorkerResult]):
         def node(state: SupervisorState) -> dict:
             task = state["task"]
+            # When deterministic QA sends work back to a coding agent, give it
+            # the concrete failure rather than asking it to rediscover the
+            # problem from a large worktree.  This is especially important for
+            # Flutter failures, which the final Codex review intentionally
+            # leaves to the independent test stage.
+            if stage in {"qwen", "openhands", "codex", "codex_final"} and state.get("events"):
+                prior = state["events"][-1]
+                if prior.stage in {"test", "browser", "visual_review", "completion_audit"} and prior.status is not Status.PASS:
+                    evidence = prior.result.test_result or prior.result.evidence.test_log or prior.summary
+                    handoff = f"Previous {prior.stage} stage failed; repair this evidence before retry:\n{evidence[-12000:]}"
+                    task = task.model_copy(update={
+                        "continuation_context": "\n".join(part for part in (task.continuation_context, handoff) if part),
+                    })
             if stage == "codex_final":
                 task = task.model_copy(update={"execution_mode": "final_verification"})
             stage_number = len(state.get("events", [])) + 1

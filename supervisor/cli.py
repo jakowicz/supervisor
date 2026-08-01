@@ -37,6 +37,11 @@ def main() -> None:
     parser.add_argument("--playwright-spec", action="append", default=[], help="Task-specific spec relative to browser/, repeatable.")
     parser.add_argument("--dry-run", action="store_true")
     parser.add_argument(
+        "--retry",
+        action="store_true",
+        help="Restart an unfinished or needs-review task at the primary Qwen stage while preserving its worktree and durable history.",
+    )
+    parser.add_argument(
         "--output-format",
         choices=["summary", "json"],
         default="summary",
@@ -93,7 +98,7 @@ def main() -> None:
             return
     run_id = str(uuid.uuid4())
     previous_state = store.claim_task(task.task_id, run_id, os.getpid())
-    previous_qwen_session = _qwen_session_to_resume(previous_state)
+    previous_qwen_session = None if arguments.retry else _qwen_session_to_resume(previous_state)
     if previous_qwen_session:
         # The session identifier is persisted at every Qwen stream checkpoint.
         # Restoring it here lets a fresh supervisor invocation continue the
@@ -113,7 +118,7 @@ def main() -> None:
     recovered_qwen = None
     if _can_recover_qwen(previous_state):
         recovered_qwen = latest_qwen_result(database_path.parent / "live", task.task_id)
-    if recovered_qwen:
+    if recovered_qwen and not arguments.retry:
         newest_qwen_log = qwen_logs(database_path.parent / "live", task.task_id)[0]
         handoff = (
             "Recovery evidence: a completed Qwen result was recovered from "
@@ -240,7 +245,7 @@ def main() -> None:
     initial_events = [recovered_event] if recovered_event else []
     initial_results = [recovered_result] if recovered_event else []
     initial_attempts = {"qwen": 1} if recovered_event else {}
-    resume_stage = "codex_final" if recovered_event else _resume_stage(previous_state)
+    resume_stage = "qwen" if arguments.retry else ("codex_final" if recovered_event else _resume_stage(previous_state))
     try:
         with telemetry.run(task, run_id, run_number) as run_span:
             final_state = create_graph(SupervisorConfig(repo_root=repo_root, dry_run=arguments.dry_run, progress=progress, event_log=event_log, stage_log_path=stage_log_path, checkpoint=checkpoint, progress_heartbeat_seconds=heartbeat_seconds, telemetry=telemetry)).invoke({"task": task, "run_id": run_id, "worker_results": initial_results, "events": initial_events, "attempts": initial_attempts, "active_agent": "qwen", "notes": ["Recovered prior Qwen result; starting independent validation."] if recovered_event else [], "resume_stage": resume_stage})

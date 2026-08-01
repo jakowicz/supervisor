@@ -79,6 +79,8 @@ def test_final_codex_prompt_requires_requirements_review_and_repair():
     assert "mandatory final verifier/fixer" in prompt
     assert "Treat the current worktree as the candidate\nsolution" in prompt
     assert "retry this same Codex final-review stage" in prompt
+    assert "Do\nnot run `flutter`, `dart`" in prompt
+    assert "independent test stage" in prompt
 
 
 def test_static_browser_mode_tells_coders_to_leave_browser_evidence_to_qa(monkeypatch):

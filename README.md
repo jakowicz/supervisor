@@ -265,6 +265,17 @@ Only one live supervisor may claim a task at a time. Once a task is accepted at
 a recorded Git commit, a repeat invocation is a safe no-op; create a new task
 ID for additional scope.
 
+If a completed run ends in `needs_user_review` because a coding or verification
+failure needs another autonomous repair pass, preserve its worktree/history and
+restart the primary implementation stage explicitly:
+
+```zsh
+supervisor-run --task-id D008 --retry
+```
+
+The retried agent receives the concrete failing test/browser evidence; it does
+not silently discard the candidate or reuse a completed agent session.
+
 If an interrupted Qwen stage already emitted a valid final `WorkerResult` in
 its raw live log, the next invocation recovers that result and begins with the
 independent test stage. It does not ask a coding agent to rediscover or rewrite
