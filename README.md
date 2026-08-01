@@ -4,6 +4,49 @@ This package orchestrates one small, reviewable runbook task at a time. It
 does not run providers by default. Instead, it has safe worker adapters which
 return a structured `environment_failure` until an explicit command is configured.
 
+## Quick start
+
+### New project
+
+From an existing Supervisor installation, create a ready-to-configure project:
+
+```zsh
+supervisor init ~/Dev/my-project --python python3.11
+cd ~/Dev/my-project/supervisor
+./.venv/bin/supervisor configure
+```
+
+`init` creates a Git repository, adds this repository as `supervisor/`, creates
+`runbooks/TEMPLATE.md`, configures ignored root `.state/` evidence storage, and
+installs the local virtual environment. It reuses the one shared Langfuse
+service at `http://127.0.0.1:3001` when it is already running.
+
+### Existing project
+
+Add the Supervisor as a submodule, install it, then configure the project:
+
+```zsh
+git submodule add git@github.com:jakowicz/supervisor.git supervisor
+cd supervisor
+python3.11 -m venv .venv
+./.venv/bin/python -m pip install --no-build-isolation -e '.[dev]'
+./.venv/bin/supervisor configure
+```
+
+### Run your first task
+
+Create a small runbook from `../runbooks/TEMPLATE.md`, for example
+`../runbooks/T001.md`. In `supervisor/.env`, configure the workers you intend
+to use and explicitly allow edits. Then run the task and inspect its report:
+
+```zsh
+./.venv/bin/supervisor-run --runbook ../runbooks/T001.md
+./.venv/bin/supervisor-reports browse
+```
+
+Evidence, SQLite history, checkpoints, reports, and raw logs always live under
+the controlled project's `.state/` directory—not inside `supervisor/`.
+
 ## Prerequisites
 
 - Python 3.10 or newer (the current machine's Python 3.9.6 is too old)
