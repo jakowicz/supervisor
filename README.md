@@ -381,8 +381,15 @@ stdout/stderr and evidence files. Langfuse adds a searchable OpenTelemetry
 trace tree alongside it: task = Langfuse session, one supervisor execution =
 trace, and every worker/QA/audit stage = nested observation.
 
-Start the fully local Langfuse stack (Postgres, ClickHouse, Redis, and MinIO
-remain inside Docker volumes on this machine):
+For normal project setup, do **not** run this script yourself: `supervisor init`
+checks for the one shared local instance and starts it only when absent. Each
+project then uses `supervisor configure` to supply the appropriate existing
+Langfuse project keys.
+
+`observability/setup-local.sh` is the underlying bootstrap and recovery tool
+for the shared local stack (Postgres, ClickHouse, Redis, and MinIO remain in
+Docker volumes on this machine). Run it directly only when intentionally
+creating or repairing that central Langfuse installation:
 
 ```bash
 cd observability
