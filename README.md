@@ -1,6 +1,6 @@
 # Supervisor — evidence-gated LangGraph task orchestration
 
-This package orchestrates one small, reviewable Emberhold task at a time. It
+This package orchestrates one small, reviewable runbook task at a time. It
 does not run providers by default. Instead, it has safe worker adapters which
 return a structured `environment_failure` until an explicit command is configured.
 
@@ -122,7 +122,7 @@ ongoing output.
 ## Run a safe graph check
 
 ```bash
-emberhold-supervisor --task-id T01 --title "Inventory reconciliation" --dry-run
+supervisor-run --task-id T01 --title "Inventory reconciliation" --dry-run
 pytest
 ```
 
@@ -173,15 +173,15 @@ they include the current continuation summary and a bounded new-output excerpt.
 
 ## Inspecting reports
 
-`emberhold-reports` opens the SQLite database read-only:
+`supervisor-reports` opens the SQLite database read-only:
 
 ```bash
-emberhold-reports list
-emberhold-reports list --task D006
-emberhold-reports task-state D006
-emberhold-reports show <run-id>
-emberhold-reports events <run-id>
-emberhold-reports export <run-id> --output /private/tmp/d006-run.json
+supervisor-reports list
+supervisor-reports list --task D006
+supervisor-reports task-state D006
+supervisor-reports show <run-id>
+supervisor-reports events <run-id>
+supervisor-reports export <run-id> --output /private/tmp/d006-run.json
 ```
 
 The supervisor prints a short completion handoff by default; full worker
@@ -220,20 +220,20 @@ The source batch is split into one immutable task contract per file under
 need to retype the objective or acceptance criteria:
 
 ```bash
-emberhold-supervisor --task-id D005
+supervisor-run --task-id D005
 ```
 
 Or pass an explicit task file when working outside the standard set:
 
 ```bash
-emberhold-supervisor --runbook ../../runbooks/D005.md
+supervisor-run --runbook ../../runbooks/D005.md
 ```
 
 Run an installed range in sequence with one shared worktree and one model at a
 time:
 
 ```bash
-emberhold-supervisor --task-range D007-D010
+supervisor-run --task-range D007-D010
 ```
 
 The batch starts D008 only after D007 is accepted. This prevents an unfinished
@@ -283,7 +283,7 @@ route decision, and its live log location. Inspect an active or completed run:
 
 ```bash
 tail -f ../.state/live/task-<task-id-lower>-run-<run-number>-stage-00-agent-supervisor-<run-id>.log
-emberhold-reports events <run-id>
+supervisor-reports events <run-id>
 ```
 
 The detailed event report is persisted when the run finishes. The live log
@@ -301,13 +301,13 @@ completed stage also writes its own human-readable raw-output log:
 Browse the SQLite history interactively, selecting a task, run, then stage:
 
 ```bash
-emberhold-reports browse
+supervisor-reports browse
 ```
 
 Or print all preserved raw output for one completed run:
 
 ```bash
-emberhold-reports events <run-id> --raw
+supervisor-reports events <run-id> --raw
 ```
 
 After the completion audit the Git publisher can commit, then push, only when
@@ -316,10 +316,10 @@ start, it requires a clean Git worktree; therefore the final non-empty diff is
 task-only. It then checks the diff and publishes only after every QA gate.
 Use a dedicated worktree for each task when multiple tasks may run at once.
 
-Start the read-only Kiln Ledger dashboard from the supervisor directory:
+Start the read-only Run Ledger dashboard from the supervisor directory:
 
 ```bash
-emberhold-dashboard
+supervisor-dashboard
 ```
 
 Open `http://127.0.0.1:8765` to view accepted/review outcomes, worker load,
@@ -330,7 +330,7 @@ the complete locally stored raw output.
 
 ## Local Langfuse observability
 
-Kiln Ledger remains the authoritative local archive for complete raw
+Run Ledger remains the authoritative local archive for complete raw
 stdout/stderr and evidence files. Langfuse adds a searchable OpenTelemetry
 trace tree alongside it: task = Langfuse session, one supervisor execution =
 trace, and every worker/QA/audit stage = nested observation.
@@ -343,16 +343,16 @@ cd observability
 ./setup-local.sh
 ```
 
-The bootstrap creates an **Emberhold Supervisor** project and local API keys,
+The bootstrap creates a **Runbook Supervisor** project and local API keys,
 then enables telemetry in `.env`. Sign in at `http://127.0.0.1:3001` as
-`local@emberhold.invalid`; the generated password is stored only in
+`local@supervisor.invalid`; the generated password is stored only in
 `observability/.env` as `LANGFUSE_INIT_USER_PASSWORD`. This explicit bootstrap
 keeps all credentials and telemetry on the local machine.
 
 Backfill the existing SQLite history after enabling it:
 
 ```bash
-emberhold-observability-import
+supervisor-observability-import
 ```
 
 The importer never changes SQLite or the existing files. It sends structured
@@ -383,7 +383,7 @@ Use a positive character limit if you later want compact remote telemetry.
 Run D006 with explicit acceptance criteria:
 
 ```bash
-./.venv/bin/emberhold-supervisor \
+./.venv/bin/supervisor-run \
   --task-id D006 \
   --title "Trusted local time and background-safe timers" \
   --objective "Implement only D006 from GWEN_DETAILED_RUNBOOK_001_010.md." \

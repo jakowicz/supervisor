@@ -1,4 +1,4 @@
-"""Read-only terminal reports for Emberhold supervisor SQLite run history."""
+"""Read-only terminal reports for supervisor SQLite run history."""
 
 from __future__ import annotations
 
@@ -237,7 +237,7 @@ def browse(connection: sqlite3.Connection, path: Path) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Inspect read-only Emberhold supervisor reports.")
+    parser = argparse.ArgumentParser(description="Inspect read-only supervisor reports.")
     subparsers = parser.add_subparsers(dest="command", required=True)
     list_parser = subparsers.add_parser("list", help="List recent task runs.")
     list_parser.add_argument("--task", help="Filter by task ID, for example D006.")

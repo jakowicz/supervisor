@@ -139,10 +139,10 @@ class SupervisorTelemetry:
                 "x-langfuse-ingestion-version": "4",
             },
         )
-        provider = TracerProvider(resource=Resource.create({"service.name": "emberhold-supervisor"}))
+        provider = TracerProvider(resource=Resource.create({"service.name": "runbook-supervisor"}))
         provider.add_span_processor(BatchSpanProcessor(exporter))
         return cls(
-            tracer=provider.get_tracer("emberhold.supervisor"),
+            tracer=provider.get_tracer("runbook.supervisor"),
             provider=provider,
             root_span_kind=SpanKind.SERVER,
         )

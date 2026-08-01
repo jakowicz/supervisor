@@ -3,9 +3,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "emberhold-supervisor"
+name = "runbook-supervisor"
 version = "0.1.0"
-description = "Evidence-gated LangGraph task supervisor for Emberhold."
+description = "Evidence-gated LangGraph task supervisor."
 requires-python = ">=3.10"
 dependencies = [
   "langgraph>=1.2,<2",
@@ -20,10 +20,10 @@ dependencies = [
 dev = ["pytest>=8,<9"]
 
 [project.scripts]
-emberhold-supervisor = "supervisor.cli:main"
-emberhold-reports = "supervisor.reports_cli:main"
-emberhold-dashboard = "supervisor.dashboard:main"
-emberhold-observability-import = "supervisor.observability_import:main"
+supervisor-run = "supervisor.cli:main"
+supervisor-reports = "supervisor.reports_cli:main"
+supervisor-dashboard = "supervisor.dashboard:main"
+supervisor-observability-import = "supervisor.observability_import:main"
 supervisor = "supervisor.manage:main"
 
 [tool.setuptools.packages.find]

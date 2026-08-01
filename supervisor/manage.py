@@ -64,7 +64,7 @@ Start with `TEMPLATE.md`, assign a unique task ID and sequence, and be precise
 about acceptance criteria. Then run it from `../supervisor`:
 
 ```zsh
-./.venv/bin/emberhold-supervisor --runbook ../runbooks/T001.md
+./.venv/bin/supervisor-run --runbook ../runbooks/T001.md
 ```
 """
 
@@ -152,7 +152,7 @@ def configure(path: Path) -> None:
 
     _write_env(path, values)
     print(f"Wrote {path} (mode 600). Secrets were not printed.")
-    print("Next: run `emberhold-supervisor --task-id <ID>` or `emberhold-dashboard`.")
+    print("Next: run `supervisor-run --task-id <ID>` or `supervisor-dashboard`.")
 
 
 def _run(command: list[str], *, cwd: Path | None = None) -> None:

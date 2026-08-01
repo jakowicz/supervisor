@@ -204,7 +204,7 @@ Return `pass` only when every criterion is genuinely verified. Return
 finish the repair; the supervisor will retry this same Codex final-review stage
 up to its configured limit.
 """
-    return f"""You are the coding worker for one isolated Emberhold task.
+    return f"""You are the coding worker for one isolated runbook task.
 
 Work only in the repository passed as your working directory. Do not publish,
 deploy, access secrets, make payments, or change product scope. Stop and report

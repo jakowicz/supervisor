@@ -1,5 +1,5 @@
 {
-  "name": "emberhold-browser-qa",
+  "name": "supervisor-browser-qa",
   "private": true,
   "devDependencies": {
     "@playwright/test": "^1.58.0"

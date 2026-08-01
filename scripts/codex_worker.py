@@ -24,7 +24,7 @@ def main() -> None:
         emit(blocked)
         return
     repo_root = repository_root()
-    with tempfile.TemporaryDirectory(prefix="emberhold-codex-") as temporary_directory:
+    with tempfile.TemporaryDirectory(prefix="supervisor-codex-") as temporary_directory:
         temporary_path = Path(temporary_directory)
         schema_path = temporary_path / "worker-result.schema.json"
         output_path = temporary_path / "final-response.json"

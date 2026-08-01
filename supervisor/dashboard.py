@@ -1,4 +1,4 @@
-"""Local, read-only Kiln Ledger metrics dashboard for supervisor runs."""
+"""Local, read-only Run Ledger metrics dashboard for supervisor runs."""
 
 from __future__ import annotations
 
@@ -47,7 +47,7 @@ def port_is_available(port: int) -> bool:
 def choose_dashboard_port(preferred: int, *, explicitly_requested: bool) -> int:
     """Use the requested port or find a nearby free port for a new dashboard."""
 
-    if explicitly_requested or port_is_available(preferred) or is_kiln_ledger_listener(preferred):
+    if explicitly_requested or port_is_available(preferred) or is_run_ledger_listener(preferred):
         return preferred
     for candidate in range(preferred + 1, preferred + 1_000):
         if port_is_available(candidate):
@@ -55,16 +55,16 @@ def choose_dashboard_port(preferred: int, *, explicitly_requested: bool) -> int:
     raise RuntimeError(f"No free localhost dashboard port found near {preferred}.")
 
 
-def is_kiln_ledger_process(pid: int) -> bool:
+def is_run_ledger_process(pid: int) -> bool:
     completed = subprocess.run(
         ["ps", "-p", str(pid), "-o", "command="],
         capture_output=True, text=True, check=False,
     )
     command = completed.stdout.lower()
-    return "emberhold-dashboard" in command or "supervisor.dashboard" in command
+    return "supervisor-dashboard" in command or "supervisor.dashboard" in command
 
 
-def is_kiln_ledger_listener(port: int) -> bool:
+def is_run_ledger_listener(port: int) -> bool:
     """Fallback verification for launchers whose process title hides Python args."""
 
     try:
@@ -72,14 +72,14 @@ def is_kiln_ledger_listener(port: int) -> bool:
             page = response.read(16_384).decode("utf-8", errors="replace")
     except OSError:
         return False
-    return "<title>Kiln Ledger</title>" in page
+    return "<title>Run Ledger</title>" in page
 
 
 def stop_existing_dashboard(port: int, pid_path: Path) -> bool:
     """Stop only a verified older dashboard process so a restart is safe."""
 
     pids = dashboard_listener_pids(port)
-    matching = [pid for pid in pids if is_kiln_ledger_process(pid)]
+    matching = [pid for pid in pids if is_run_ledger_process(pid)]
     try:
         recorded_pid = int(pid_path.read_text(encoding="utf-8").strip())
     except (OSError, ValueError):
@@ -88,7 +88,7 @@ def stop_existing_dashboard(port: int, pid_path: Path) -> bool:
         matching.append(recorded_pid)
     # Some Python launchers present a truncated command to `ps`. In that case,
     # verify the local HTTP page rather than guessing from the executable name.
-    if not matching and is_kiln_ledger_listener(port):
+    if not matching and is_run_ledger_listener(port):
         matching = pids
     if not matching or len(matching) != len(pids):
         return False
@@ -220,7 +220,7 @@ LOG_REVIEW_PANEL = """
 
 def navigation(active: str) -> str:
     links = (("/", "Ledger", "ledger"), ("/logs", "Evidence archive", "logs"))
-    return "<nav aria-label='Dashboard'><span class='nav-mark'>KILN /</span>" + "".join(
+    return "<nav aria-label='Dashboard'><span class='nav-mark'>RUNS /</span>" + "".join(
         f"<a href='{href}' class='{'active' if key == active else ''}'>{label}</a>"
         for href, label, key in links
     ) + "</nav>"
@@ -235,8 +235,8 @@ def render(data: dict) -> str:
         for run in data["recent"]
     ) or "<p>No supervisor runs yet.</p>"
     nav = navigation("ledger")
-    return f"""<!doctype html><html><head><meta charset='utf-8'><title>Kiln Ledger</title><style>
-    :root{{--obsidian:#19171e;--slate:#27242e;--ash:#eee2d1;--cinder:#e85d2a;--teal:#5fb8ad;--smoke:#a7a0aa}}*{{box-sizing:border-box}}body{{margin:0;background:var(--obsidian);color:var(--ash);font:16px ui-monospace,SFMono-Regular,Menlo,monospace}}main{{max-width:1180px;margin:auto;padding:26px 24px 44px}}nav{{display:flex;align-items:center;gap:8px;border-bottom:1px solid #514a57;padding:0 0 14px;margin-bottom:34px}}.nav-mark{{font-size:12px;color:var(--teal);letter-spacing:.14em;margin-right:8px}}nav a{{color:var(--smoke);text-decoration:none;padding:7px 10px;border:1px solid transparent}}nav a:hover,nav a.active{{border-color:#56505d;color:var(--ash);background:#27242e}}header{{display:flex;justify-content:space-between;align-items:end;border-bottom:1px solid #514a57;padding-bottom:20px}}h1{{font:700 42px Georgia,serif;margin:0;letter-spacing:-1px}}header p{{color:var(--smoke);margin:0}}.grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:26px 0}}.card,article{{background:var(--slate);border:1px solid #45404c;padding:18px}}.value{{font:700 38px Georgia,serif;color:var(--cinder);display:block;margin-top:8px}}.label{{color:var(--smoke);font-size:12px;text-transform:uppercase;letter-spacing:.12em}}section{{margin-top:32px}}h2{{font:700 24px Georgia,serif}}.columns{{display:grid;grid-template-columns:1fr 2fr;gap:20px}}table{{width:100%;border-collapse:collapse}}td{{padding:10px;border-bottom:1px solid #45404c}}article{{margin-bottom:10px;border-left:4px solid var(--teal)}}article span{{float:right;color:var(--cinder)}}article p{{margin:8px 0}}small{{color:var(--smoke)}}@media(max-width:720px){{.grid,.columns{{grid-template-columns:1fr 1fr}}header{{display:block}}header p{{margin-top:10px}}}}@media(max-width:960px){{.columns{{grid-template-columns:1fr}}}}</style></head><body><main>{nav}<header><div><p>Emberhold / supervisor observability</p><h1>Kiln Ledger</h1></div><p>Read-only local metrics</p></header><div class='grid'><div class='card'><span class='label'>Task runs</span><span class='value'>{data['runs']}</span></div><div class='card'><span class='label'>Accepted</span><span class='value'>{data['accepted']}</span></div><div class='card'><span class='label'>Acceptance rate</span><span class='value'>{acceptance}%</span></div><div class='card'><span class='label'>Average stages/run</span><span class='value'>{data['attempts_per_run']}</span></div></div><div class='columns'><section><h2>Worker load</h2><table>{agent_rows}</table><h2>Non-pass events</h2><table>{''.join(f'<tr><td>{html.escape(name)}</td><td>{count}</td></tr>' for name,count in data['failures'].most_common()) or '<tr><td>None</td><td>0</td></tr>'}</table></section><section><h2>Recent routing traces</h2>{recent_rows}</section></div></main></body></html>"""
+    return f"""<!doctype html><html><head><meta charset='utf-8'><title>Run Ledger</title><style>
+    :root{{--obsidian:#19171e;--slate:#27242e;--ash:#eee2d1;--cinder:#e85d2a;--teal:#5fb8ad;--smoke:#a7a0aa}}*{{box-sizing:border-box}}body{{margin:0;background:var(--obsidian);color:var(--ash);font:16px ui-monospace,SFMono-Regular,Menlo,monospace}}main{{max-width:1180px;margin:auto;padding:26px 24px 44px}}nav{{display:flex;align-items:center;gap:8px;border-bottom:1px solid #514a57;padding:0 0 14px;margin-bottom:34px}}.nav-mark{{font-size:12px;color:var(--teal);letter-spacing:.14em;margin-right:8px}}nav a{{color:var(--smoke);text-decoration:none;padding:7px 10px;border:1px solid transparent}}nav a:hover,nav a.active{{border-color:#56505d;color:var(--ash);background:#27242e}}header{{display:flex;justify-content:space-between;align-items:end;border-bottom:1px solid #514a57;padding-bottom:20px}}h1{{font:700 42px Georgia,serif;margin:0;letter-spacing:-1px}}header p{{color:var(--smoke);margin:0}}.grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin:26px 0}}.card,article{{background:var(--slate);border:1px solid #45404c;padding:18px}}.value{{font:700 38px Georgia,serif;color:var(--cinder);display:block;margin-top:8px}}.label{{color:var(--smoke);font-size:12px;text-transform:uppercase;letter-spacing:.12em}}section{{margin-top:32px}}h2{{font:700 24px Georgia,serif}}.columns{{display:grid;grid-template-columns:1fr 2fr;gap:20px}}table{{width:100%;border-collapse:collapse}}td{{padding:10px;border-bottom:1px solid #45404c}}article{{margin-bottom:10px;border-left:4px solid var(--teal)}}article span{{float:right;color:var(--cinder)}}article p{{margin:8px 0}}small{{color:var(--smoke)}}@media(max-width:720px){{.grid,.columns{{grid-template-columns:1fr 1fr}}header{{display:block}}header p{{margin-top:10px}}}}@media(max-width:960px){{.columns{{grid-template-columns:1fr}}}}</style></head><body><main>{nav}<header><div><p>Supervisor / local observability</p><h1>Run Ledger</h1></div><p>Read-only local metrics</p></header><div class='grid'><div class='card'><span class='label'>Task runs</span><span class='value'>{data['runs']}</span></div><div class='card'><span class='label'>Accepted</span><span class='value'>{data['accepted']}</span></div><div class='card'><span class='label'>Acceptance rate</span><span class='value'>{acceptance}%</span></div><div class='card'><span class='label'>Average stages/run</span><span class='value'>{data['attempts_per_run']}</span></div></div><div class='columns'><section><h2>Worker load</h2><table>{agent_rows}</table><h2>Non-pass events</h2><table>{''.join(f'<tr><td>{html.escape(name)}</td><td>{count}</td></tr>' for name,count in data['failures'].most_common()) or '<tr><td>None</td><td>0</td></tr>'}</table></section><section><h2>Recent routing traces</h2>{recent_rows}</section></div></main></body></html>"""
 
 
 def render_logs(live_items: list[dict] | None = None, database: Path | None = None, selected_live: str = "") -> str:
@@ -256,12 +256,12 @@ def render_logs(live_items: list[dict] | None = None, database: Path | None = No
     panel = LOG_REVIEW_PANEL.replace("__LIVE_STATUS__", f"{len(live_items)} local log files available" if live_items else "No live logs yet")
     panel = panel.replace("__LIVE_OPTIONS__", "".join(options))
     panel = panel.replace("__LIVE_CONTENT__", html.escape(content))
-    return f"""<!doctype html><html><head><meta charset='utf-8'><title>Evidence archive · Kiln Ledger</title><style>
+    return f"""<!doctype html><html><head><meta charset='utf-8'><title>Evidence archive · Run Ledger</title><style>
     :root{{--obsidian:#19171e;--slate:#27242e;--ash:#eee2d1;--cinder:#e85d2a;--teal:#5fb8ad;--smoke:#a7a0aa}}*{{box-sizing:border-box}}body{{margin:0;background:var(--obsidian);color:var(--ash);font:16px ui-monospace,SFMono-Regular,Menlo,monospace}}main{{max-width:1400px;margin:auto;padding:26px 24px 44px}}nav{{display:flex;align-items:center;gap:8px;border-bottom:1px solid #514a57;padding:0 0 14px;margin-bottom:34px}}.nav-mark{{font-size:12px;color:var(--teal);letter-spacing:.14em;margin-right:8px}}nav a{{color:var(--smoke);text-decoration:none;padding:7px 10px;border:1px solid transparent}}nav a:hover,nav a.active{{border-color:#56505d;color:var(--ash);background:#27242e}}.live-review{{padding-top:4px}}.log-review{{margin-top:38px;padding-top:28px;border-top:1px solid #514a57}}.section-heading{{display:flex;justify-content:space-between;align-items:end;border-bottom:1px solid #514a57;padding-bottom:20px}}.eyebrow{{color:var(--teal);font-size:12px;letter-spacing:.12em;text-transform:uppercase;margin:0}}h2{{font:700 38px Georgia,serif;margin:4px 0;letter-spacing:-1px}}small,.log-meta{{color:var(--smoke)}}.log-controls,.live-controls{{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin:24px 0 16px}}label{{color:var(--smoke);font-size:12px;text-transform:uppercase;letter-spacing:.08em}}select,button{{display:block;width:100%;margin-top:6px;padding:10px;background:#15131a;color:var(--ash);border:1px solid #56505d;font:14px ui-monospace,SFMono-Regular,Menlo,monospace}}button{{align-self:end;cursor:pointer;color:var(--teal)}}.log-meta{{margin:12px 0}}pre{{min-height:220px;max-height:65vh;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;background:#111016;border:1px solid #45404c;border-left:4px solid var(--cinder);padding:16px;color:#e9dfd2;line-height:1.5}}@media(max-width:720px){{.log-controls,.live-controls{{grid-template-columns:1fr}}.section-heading{{display:block}}}}</style></head><body><main>{nav}{panel}</main></body></html>"""
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Serve the read-only Emberhold supervisor metrics dashboard.")
+    parser = argparse.ArgumentParser(description="Serve the read-only supervisor metrics dashboard.")
     parser.add_argument("--port", type=int, help="Dashboard port. Defaults to the configured port or the next free localhost port.")
     parser.add_argument("--no-reload", action="store_true", help="Disable automatic restart when dashboard Python files change.")
     arguments = parser.parse_args()
@@ -334,7 +334,7 @@ def main() -> None:
     except OSError as error:
         if error.errno != 48 or not stop_existing_dashboard(port, pid_path):
             raise SystemExit(
-                f"Port {port} is already in use by a process that is not a verified Kiln Ledger dashboard. "
+                f"Port {port} is already in use by a process that is not a verified Run Ledger dashboard. "
                 f"Choose another port or stop that process yourself."
             ) from error
         for _ in range(20):
@@ -344,10 +344,10 @@ def main() -> None:
             except OSError:
                 time.sleep(0.1)
         else:
-            raise SystemExit(f"The previous Kiln Ledger process did not release port {arguments.port}.")
-        print(f"Restarted existing Kiln Ledger on port {port}.")
+            raise SystemExit(f"The previous Run Ledger process did not release port {arguments.port}.")
+        print(f"Restarted existing Run Ledger on port {port}.")
     pid_path.write_text(str(os.getpid()), encoding="utf-8")
-    print(f"Kiln Ledger: http://127.0.0.1:{port}")
+    print(f"Run Ledger: http://127.0.0.1:{port}")
     reload_requested = threading.Event()
     watcher_stop = threading.Event()
 
@@ -366,7 +366,7 @@ def main() -> None:
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\nKiln Ledger stopped.")
+        print("\nRun Ledger stopped.")
     finally:
         watcher_stop.set()
         server.server_close()

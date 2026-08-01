@@ -1,6 +1,6 @@
 import sqlite3
 
-from supervisor.dashboard import choose_dashboard_port, is_kiln_ledger_listener, is_kiln_ledger_process, live_logs, metrics, read_live_log, render, render_logs, run_summaries, source_signature
+from supervisor.dashboard import choose_dashboard_port, is_run_ledger_listener, is_run_ledger_process, live_logs, metrics, read_live_log, render, render_logs, run_summaries, source_signature
 
 
 def test_dashboard_metrics_handles_empty_database():
@@ -8,7 +8,7 @@ def test_dashboard_metrics_handles_empty_database():
     connection.execute("CREATE TABLE task_runs (payload TEXT)")
     data = metrics(connection)
     assert data["runs"] == 0
-    assert "Kiln Ledger" in render(data)
+    assert "Run Ledger" in render(data)
     assert run_summaries(connection) == []
     assert "Review raw worker logs" in render_logs()
     assert "href='/logs'" in render(data)
@@ -26,28 +26,28 @@ def test_dashboard_summaries_tolerate_a_legacy_payload_without_run_id():
 def test_dashboard_process_detection(monkeypatch):
     class Completed:
         returncode = 0
-        stdout = "python emberhold-dashboard --port 8765"
+        stdout = "python supervisor-dashboard --port 8765"
 
     monkeypatch.setattr("supervisor.dashboard.subprocess.run", lambda *args, **kwargs: Completed())
-    assert is_kiln_ledger_process(12345)
+    assert is_run_ledger_process(12345)
 
 
 def test_dashboard_listener_detection(monkeypatch):
     class Response:
         def read(self, _size):
-            return b"<title>Kiln Ledger</title>"
+            return b"<title>Run Ledger</title>"
         def __enter__(self):
             return self
         def __exit__(self, *_):
             return False
 
     monkeypatch.setattr("supervisor.dashboard.urlopen", lambda *_args, **_kwargs: Response())
-    assert is_kiln_ledger_listener(8765)
+    assert is_run_ledger_listener(8765)
 
 
 def test_dashboard_chooses_next_free_port_when_default_is_busy(monkeypatch):
     monkeypatch.setattr("supervisor.dashboard.port_is_available", lambda port: port == 8766)
-    monkeypatch.setattr("supervisor.dashboard.is_kiln_ledger_listener", lambda _port: False)
+    monkeypatch.setattr("supervisor.dashboard.is_run_ledger_listener", lambda _port: False)
 
     assert choose_dashboard_port(8765, explicitly_requested=False) == 8766
 

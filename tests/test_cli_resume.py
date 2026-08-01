@@ -71,7 +71,7 @@ def test_compact_run_summary_excludes_raw_worker_evidence(tmp_path):
     summary = _run_summary(run, Path(tmp_path) / "supervisor.sqlite3")
 
     assert "very large raw transcript" not in summary
-    assert "emberhold-reports show run-42" in summary
+    assert "supervisor-reports show run-42" in summary
 
 
 def test_task_range_expands_inclusive_zero_padded_task_ids():

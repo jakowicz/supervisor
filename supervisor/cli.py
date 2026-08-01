@@ -24,7 +24,7 @@ from .storage import RunStore
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run one Emberhold supervisor task.")
+    parser = argparse.ArgumentParser(description="Run one evidence-gated supervisor task.")
     parser.add_argument("--task-id", help="Runbook task ID, for example D005. Automatically loads runbooks/<ID>.md when present.")
     parser.add_argument("--task-range", help="Sequential runbook range, for example D007-D010. Stops at the first task that is not accepted.")
     parser.add_argument("--continue-on-nonpass", action="store_true", help="Continue a task range after a task needs review or fails. Use only when tasks are independent.")
@@ -300,7 +300,7 @@ def _run_summary(run: TaskRun, database_path: Path) -> str:
     lines.extend([
         f"Report: {report_path}",
         f"Evidence: {database_path}",
-        f"Inspect: emberhold-reports show {run.run_id}",
+        f"Inspect: supervisor-reports show {run.run_id}",
         "Use --output-format json only when another program needs the full raw run payload.",
     ])
     return "\n".join(lines)

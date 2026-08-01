@@ -23,17 +23,17 @@ fi
 if ! grep -q '^LANGFUSE_INIT_PROJECT_PUBLIC_KEY=' "$env_file"; then
   umask 077
   {
-    printf 'LANGFUSE_INIT_ORG_ID=emberhold-local\n'
-    printf 'LANGFUSE_INIT_ORG_NAME=Emberhold Local\n'
-    printf 'LANGFUSE_INIT_PROJECT_ID=emberhold-supervisor\n'
-    printf 'LANGFUSE_INIT_PROJECT_NAME=Emberhold Supervisor\n'
+    printf 'LANGFUSE_INIT_ORG_ID=supervisor-local\n'
+    printf 'LANGFUSE_INIT_ORG_NAME=Supervisor Local\n'
+    printf 'LANGFUSE_INIT_PROJECT_ID=runbook-supervisor\n'
+    printf 'LANGFUSE_INIT_PROJECT_NAME=Runbook Supervisor\n'
     printf 'LANGFUSE_INIT_PROJECT_PUBLIC_KEY=pk-lf-local-%s\n' "$(secret)"
     printf 'LANGFUSE_INIT_PROJECT_SECRET_KEY=sk-lf-local-%s\n' "$(secret)"
-    printf 'LANGFUSE_INIT_USER_EMAIL=local@emberhold.invalid\n'
+    printf 'LANGFUSE_INIT_USER_EMAIL=local@supervisor.invalid\n'
     printf 'LANGFUSE_INIT_USER_NAME=Local Operator\n'
     printf 'LANGFUSE_INIT_USER_PASSWORD=%s\n' "$(secret)"
   } >> "$env_file"
-  printf 'Created the local Emberhold Supervisor project credentials.\n'
+  printf 'Created the local Runbook Supervisor project credentials.\n'
 fi
 
 supervisor_env="$script_dir/../.env"
@@ -55,4 +55,4 @@ fi
 
 docker compose --env-file "$env_file" -f "$script_dir/docker-compose.yml" up -d
 printf 'Langfuse is starting at http://127.0.0.1:3001\n'
-printf 'The local Emberhold Supervisor project is ready. Run emberhold-observability-import to backfill SQLite history.\n'
+printf 'The local Runbook Supervisor project is ready. Run supervisor-observability-import to backfill SQLite history.\n'
