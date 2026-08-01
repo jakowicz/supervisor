@@ -74,6 +74,29 @@ def test_configure_has_safe_bundled_worker_command_defaults():
     assert manage.DEFAULTS["OPENHANDS_COMMAND"] == "./.venv/bin/python scripts/openhands_worker.py {task_file}"
     assert manage.DEFAULTS["CODEX_COMMAND"] == "./.venv/bin/python scripts/codex_worker.py {task_file}"
     assert manage.DEFAULTS["BROWSER_QA_COMMAND"] == "./.venv/bin/python scripts/browser_worker.py {task_file}"
+    assert manage.DEFAULTS["SUPERVISOR_ALLOW_AUTONOMOUS_WRITES"] == "true"
+    assert manage.DEFAULTS["SUPERVISOR_AUTO_COMMIT"] == "true"
+    assert manage.DEFAULTS["SUPERVISOR_AUTO_PUSH"] == "true"
+    assert manage.DEFAULTS["LLM_BASE_URL"] == "http://127.0.0.1:11434/v1"
+    assert manage.DEFAULTS["CODEX_MODEL"] == "gpt-5.6-terra"
+
+
+def test_ollama_models_parses_installed_names(monkeypatch):
+    class Process:
+        returncode = 0
+        stdout = "NAME ID SIZE MODIFIED\nqwen3-coder-next:latest abc 58 GB now\ngemma4:12b def 8 GB now\n"
+
+    monkeypatch.setattr(manage.subprocess, "run", lambda *_args, **_kwargs: Process())
+
+    assert manage.ollama_models() == ["qwen3-coder-next:latest", "gemma4:12b"]
+
+
+def test_model_choices_prefer_qwen_and_terra(monkeypatch):
+    answers = iter(["", ""])
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
+
+    assert manage._choose_ollama_model("Qwen", "", ["gemma4:12b", "qwen3-coder-next:latest"]) == "qwen3-coder-next:latest"
+    assert manage._choose_codex_model("") == "gpt-5.6-terra"
 
 
 def test_project_path_prompt_requires_a_path(monkeypatch, tmp_path: Path, capsys):

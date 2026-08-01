@@ -32,11 +32,14 @@ DEFAULTS = {
     "SUPERVISOR_WORKER_TIMEOUT_SECONDS": "1800",
     "SUPERVISOR_QWEN_IDLE_TIMEOUT_SECONDS": "600",
     "SUPERVISOR_PROGRESS_HEARTBEAT_SECONDS": "30",
-    "SUPERVISOR_AUTO_COMMIT": "false",
-    "SUPERVISOR_AUTO_PUSH": "false",
-    "SUPERVISOR_OBSERVABILITY_ENABLED": "false",
+    "SUPERVISOR_ALLOW_AUTONOMOUS_WRITES": "true",
+    "SUPERVISOR_AUTO_COMMIT": "true",
+    "SUPERVISOR_AUTO_PUSH": "true",
+    "SUPERVISOR_OBSERVABILITY_ENABLED": "true",
     "SUPERVISOR_OBSERVABILITY_ENVIRONMENT": "local",
     "LANGFUSE_BASE_URL": "http://127.0.0.1:3001",
+    "LLM_BASE_URL": "http://127.0.0.1:11434/v1",
+    "CODEX_MODEL": "gpt-5.6-terra",
     # These bundled adapters are safe defaults: they still need their
     # respective CLI/provider installed, and editing remains disabled until
     # the user explicitly enables SUPERVISOR_ALLOW_AUTONOMOUS_WRITES.
@@ -48,6 +51,7 @@ DEFAULTS = {
 
 DEFAULT_SUPERVISOR_URL = "git@github.com:jakowicz/supervisor.git"
 MINIMUM_PYTHON_VERSION = (3, 10)
+CODEX_MODELS = ("gpt-5.6-terra", "gpt-5.6-sol")
 
 RUNBOOK_TEMPLATE = """---
 task_id: T001
@@ -95,6 +99,73 @@ def _yes_no(label: str, default: bool) -> bool:
     suffix = "Y/n" if default else "y/N"
     value = input(f"{label} [{suffix}]: ").strip().lower()
     return default if not value else value in {"y", "yes"}
+
+
+def ollama_models() -> list[str]:
+    """Return locally installed Ollama model names without failing setup."""
+
+    try:
+        result = subprocess.run(["ollama", "list"], text=True, capture_output=True, check=False)
+    except FileNotFoundError:
+        return []
+    if result.returncode != 0:
+        return []
+    models: list[str] = []
+    for line in result.stdout.splitlines()[1:]:
+        fields = line.split()
+        if fields and fields[0] not in models:
+            models.append(fields[0])
+    return models
+
+
+def _normalise_ollama_model(value: str) -> str:
+    return value.removeprefix("ollama/")
+
+
+def _choose_ollama_model(label: str, current: str, models: list[str]) -> str:
+    """Offer local Ollama models, preserving a current explicit value."""
+
+    current = _normalise_ollama_model(current)
+    if not models:
+        print("No Ollama models were detected. Enter a model name, or leave blank to use the provider default.")
+        return _prompt(f"{label} model", current)
+    default = current if current in models else next((model for model in models if "qwen" in model.lower()), models[0])
+    print(f"\nInstalled Ollama models for {label}:")
+    for index, model in enumerate(models, start=1):
+        marker = " (default)" if model == default else ""
+        print(f"  {index}. {model}{marker}")
+    print("  0. Enter a different model name")
+    while True:
+        choice = input(f"Choose {label} model [{models.index(default) + 1}]: ").strip()
+        if not choice:
+            return default
+        if choice == "0":
+            return _prompt(f"{label} model", default)
+        if choice.isdigit() and 1 <= int(choice) <= len(models):
+            return models[int(choice) - 1]
+        if choice in models:
+            return choice
+        print(f"Choose 0-{len(models)}, or enter one of the listed model names.")
+
+
+def _choose_codex_model(current: str) -> str:
+    default = current if current else DEFAULTS["CODEX_MODEL"]
+    print("\nCodex model:")
+    for index, model in enumerate(CODEX_MODELS, start=1):
+        marker = " (default)" if model == default else ""
+        print(f"  {index}. {model}{marker}")
+    print("  0. Enter a different model name")
+    while True:
+        choice = input(f"Choose Codex model [{CODEX_MODELS.index(default) + 1 if default in CODEX_MODELS else 1}]: ").strip()
+        if not choice:
+            return default
+        if choice == "0":
+            return _prompt("Codex model", default)
+        if choice.isdigit() and 1 <= int(choice) <= len(CODEX_MODELS):
+            return CODEX_MODELS[int(choice) - 1]
+        if choice in CODEX_MODELS:
+            return choice
+        print(f"Choose 0-{len(CODEX_MODELS)}, or enter one of the listed model names.")
 
 
 def _project_path_prompt(default: Path | None = None) -> Path:
@@ -155,28 +226,29 @@ def configure(path: Path) -> None:
         values[key] = _prompt(label, _value(existing, key))
 
     values["SUPERVISOR_ALLOW_AUTONOMOUS_WRITES"] = "true" if _yes_no("Allow coding agents to edit this project", _value(existing, "SUPERVISOR_ALLOW_AUTONOMOUS_WRITES") == "true") else "false"
-    values["SUPERVISOR_AUTO_COMMIT"] = "true" if _yes_no("Commit accepted tasks automatically", _value(existing, "SUPERVISOR_AUTO_COMMIT") == "true") else "false"
-    values["SUPERVISOR_AUTO_PUSH"] = "true" if _yes_no("Push accepted task commits automatically", _value(existing, "SUPERVISOR_AUTO_PUSH") == "true") else "false"
+    publish = _yes_no(
+        "Automatically commit and push accepted tasks",
+        _value(existing, "SUPERVISOR_AUTO_COMMIT") == "true" and _value(existing, "SUPERVISOR_AUTO_PUSH") == "true",
+    )
+    values["SUPERVISOR_AUTO_COMMIT"] = "true" if publish else "false"
+    values["SUPERVISOR_AUTO_PUSH"] = "true" if publish else "false"
 
-    print("\nAgent adapters and models (press Enter to keep each shown value):")
-    for key, label in (
-        ("QWEN_CODER_COMMAND", "Qwen worker command"),
-        ("OPENHANDS_COMMAND", "OpenHands worker command"),
-        ("CODEX_COMMAND", "Codex worker command"),
-        ("BROWSER_QA_COMMAND", "Browser QA command"),
-        ("VISUAL_REVIEW_COMMAND", "Visual review command"),
-        ("QWEN_MODEL", "Qwen model"),
-        ("LLM_MODEL", "OpenHands model"),
-        ("LLM_BASE_URL", "OpenHands/Qwen base URL"),
-        ("CODEX_MODEL", "Codex model"),
-    ):
-        values[key] = _prompt(label, _value(existing, key))
+    # Bundled adapters and shared-local telemetry need no repeated setup
+    # choices. Keep any project-specific visual reviewer unchanged.
+    for key in ("QWEN_CODER_COMMAND", "OPENHANDS_COMMAND", "CODEX_COMMAND", "BROWSER_QA_COMMAND", "VISUAL_REVIEW_COMMAND"):
+        values[key] = _value(existing, key)
+    models = ollama_models()
+    values["QWEN_MODEL"] = _choose_ollama_model("Qwen", _value(existing, "QWEN_MODEL"), models)
+    openhands_model = _choose_ollama_model("OpenHands", _value(existing, "LLM_MODEL"), models)
+    values["LLM_MODEL"] = f"ollama/{openhands_model}" if openhands_model else ""
+    values["LLM_BASE_URL"] = _value(existing, "LLM_BASE_URL")
+    values["CODEX_MODEL"] = _choose_codex_model(_value(existing, "CODEX_MODEL"))
 
-    enabled = _yes_no("Send observability to Langfuse", _value(existing, "SUPERVISOR_OBSERVABILITY_ENABLED") == "true")
-    values["SUPERVISOR_OBSERVABILITY_ENABLED"] = "true" if enabled else "false"
-    if enabled:
-        values["SUPERVISOR_OBSERVABILITY_ENVIRONMENT"] = _prompt("Langfuse environment", _value(existing, "SUPERVISOR_OBSERVABILITY_ENVIRONMENT"))
-        values["LANGFUSE_BASE_URL"] = _prompt("Langfuse base URL", _value(existing, "LANGFUSE_BASE_URL"))
+    values["SUPERVISOR_OBSERVABILITY_ENABLED"] = "true"
+    values["SUPERVISOR_OBSERVABILITY_ENVIRONMENT"] = _value(existing, "SUPERVISOR_OBSERVABILITY_ENVIRONMENT")
+    values["LANGFUSE_BASE_URL"] = _value(existing, "LANGFUSE_BASE_URL")
+    if not values.get("LANGFUSE_PUBLIC_KEY") or not values.get("LANGFUSE_SECRET_KEY"):
+        print("\nLangfuse project credentials (required when this project has not already received shared local keys):")
         values["LANGFUSE_PUBLIC_KEY"] = _prompt("Langfuse public key", _value(existing, "LANGFUSE_PUBLIC_KEY"), secret=True)
         values["LANGFUSE_SECRET_KEY"] = _prompt("Langfuse secret key", _value(existing, "LANGFUSE_SECRET_KEY"), secret=True)
 
