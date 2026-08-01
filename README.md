@@ -258,6 +258,57 @@ visual-review command has accepted the evidence.
    user review. A successful Qwen or OpenHands implementation always receives
    a separate Codex final verifier/fixer pass before deterministic QA begins.
 
+## Execution flow
+
+```mermaid
+flowchart TB
+    start["Run a task, runbook, or task range"] --> load["Load configuration, runbook, SQLite history, and durable checkpoint"]
+    load --> resumed{"Checkpoint or recovered result available?"}
+    resumed -- "Yes" --> resume["Resume at the saved next stage"]
+    resumed -- "No" --> prepare["Prepare: Git baseline guard"]
+    prepare -- "Pass" --> qwen["Qwen implementation"]
+    prepare -- "Blocked" --> review["Needs user review"]
+
+    qwen -- "Pass" --> precheck["Deterministic precheck"]
+    qwen -- "Failure" --> next_agent{"Next eligible coding agent?"}
+    precheck -- "Pass" --> codex_final["Codex final verifier/fixer\n(up to 3 attempts)"]
+    precheck -- "Repairable failure" --> next_agent
+    precheck -- "Environment failure" --> review
+
+    next_agent -- "Qwen retry, if configured" --> qwen
+    next_agent -- "OpenHands" --> openhands["OpenHands implementation"]
+    next_agent -- "Codex" --> codex["Codex implementation\n(up to 3 attempts)"]
+    next_agent -- "No budget remains" --> review
+    openhands -- "Pass" --> precheck
+    openhands -- "Failure" --> next_agent
+    codex -- "Pass" --> tests["Independent test worker"]
+    codex -- "Failure" --> next_agent
+
+    codex_final -- "Pass" --> tests
+    codex_final -- "Retryable failure" --> codex_final
+    codex_final -- "Exhausted or unclear" --> review
+    tests -- "Pass" --> browser["Browser QA\nrelease build + Playwright"]
+    tests -- "Repairable failure" --> next_agent
+    tests -- "Environment failure" --> review
+    browser -- "Pass" --> visual["Visual review"]
+    browser -- "Repairable failure" --> next_agent
+    browser -- "Environment failure" --> review
+    visual -- "Pass" --> audit["Completion-contract audit"]
+    visual -- "Repairable failure" --> next_agent
+    visual -- "Needs review or environment failure" --> review
+    audit -- "Pass" --> publish["Git publisher\ncommit and optional push"]
+    audit -- "Failure" --> next_agent
+    publish -- "Pass" --> accepted["Accepted task\nReports, logs, SQLite, and telemetry updated"]
+    publish -- "Failure" --> next_agent
+```
+
+By default, coding retries are Qwen once, OpenHands once, then Codex up to
+three times. A coding-stage pass by Qwen or OpenHands receives the separate
+Codex final verification pass; a Codex fallback pass proceeds directly to the
+independent QA stages. Environment failures do not consume implementation
+retries, and a task range runs sequentially, stopping before later tasks when
+an earlier task is not accepted.
+
 Evidence and run history are stored in `<project-root>/.state/supervisor.sqlite3`; screenshots
 belong in `../../artifacts/qa/<task-id>/`.
 
