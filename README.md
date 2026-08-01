@@ -211,7 +211,12 @@ LLM_API_KEY=ollama
 
 The same shared `/v1` URL is correct: Qwen uses the OpenAI-compatible endpoint,
 while the OpenHands adapter automatically removes that suffix for LiteLLM's native
-Ollama provider. Do not create a second OpenHands-specific URL variable.
+Ollama provider. The supervisor stores an isolated OpenHands profile at
+`.state/openhands`, copying its existing MCP configuration on first use, and
+disables thinking there for Ollama-backed fallback work. This avoids unsupported
+thinking requests from local models such as qwen3-coder-next without changing
+your global OpenHands profile. Do not create a second OpenHands-specific URL
+variable.
 
 The supervisor keeps Qwen's normal model/context settings. If you ever need a
 lower-context diagnostic tag, the included optional tag reuses the installed

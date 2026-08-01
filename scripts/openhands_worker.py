@@ -3,14 +3,15 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import tempfile
 from pathlib import Path
 
 from supervisor.models import NextStep, Task
-from supervisor.worker_support import openhands_base_url
+from supervisor.worker_support import openhands_base_url, prepare_openhands_persistence
 
-from worker_adapter import emit, failure, parse_worker_result, repository_root, run_command, safety_gate, task_prompt
+from worker_adapter import emit, failure, parse_openhands_result, repository_root, run_command, safety_gate, task_prompt
 
 
 def main() -> None:
@@ -25,8 +26,18 @@ def main() -> None:
     native_base_url = openhands_base_url(os.getenv("LLM_MODEL", ""), os.getenv("LLM_BASE_URL"))
     if native_base_url:
         os.environ["LLM_BASE_URL"] = native_base_url
+    try:
+        os.environ["OPENHANDS_PERSISTENCE_DIR"] = str(
+            prepare_openhands_persistence(
+                Path.home() / ".openhands",
+                repository_root() / ".state" / "openhands",
+            )
+        )
+    except (FileNotFoundError, json.JSONDecodeError, OSError) as error:
+        emit(failure("OpenHands", f"could not prepare isolated OpenHands profile: {error}", NextStep.USE_CODEX))
+        return
     with tempfile.NamedTemporaryFile(mode="w", suffix=".md", encoding="utf-8", delete=False) as prompt_file:
-        prompt_file.write(task_prompt(task))
+        prompt_file.write(task_prompt(task, completion_mode="finish_action"))
         prompt_path = Path(prompt_file.name)
     try:
         command = [
@@ -39,7 +50,7 @@ def main() -> None:
     if code != 0:
         emit(failure("OpenHands", f"exited with code {code}", NextStep.USE_CODEX, stdout, stderr))
         return
-    result = parse_worker_result(stdout)
+    result = parse_openhands_result(stdout)
     if result:
         result.evidence.agent_log = stdout + stderr
     emit(result or failure("OpenHands", "did not emit a valid WorkerResult JSON object", NextStep.USE_CODEX, stdout, stderr))

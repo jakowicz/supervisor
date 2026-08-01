@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import json
+import os
+import shutil
+from pathlib import Path
+from tempfile import NamedTemporaryFile
 from urllib.parse import urlsplit, urlunsplit
 
 from .models import WorkerResult
@@ -21,6 +26,47 @@ def openhands_base_url(model: str, base_url: str | None) -> str | None:
     if parsed.path.rstrip("/") != "/v1":
         return base_url
     return urlunsplit((parsed.scheme, parsed.netloc, "", "", ""))
+
+
+def prepare_openhands_persistence(
+    source_dir: Path, target_dir: Path, reasoning_effort: str = "none"
+) -> Path:
+    """Create the isolated OpenHands profile used by one supervisor project.
+
+    OpenHands' CLI override flag only accepts model, URL, and API key. Its
+    stored profile otherwise defaults to high reasoning effort, which LiteLLM
+    maps into an Ollama thinking request. Seed a project-owned profile once,
+    preserve its MCP configuration, and set the safe local-model default.
+    """
+
+    source_settings = source_dir / "agent_settings.json"
+    target_settings = target_dir / "agent_settings.json"
+    if not target_settings.exists():
+        if not source_settings.exists():
+            raise FileNotFoundError(
+                f"OpenHands settings not found at {source_settings}; run openhands once to initialise it."
+            )
+        target_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source_settings, target_settings)
+        source_mcp = source_dir / "mcp.json"
+        if source_mcp.exists():
+            shutil.copy2(source_mcp, target_dir / "mcp.json")
+
+    profile = json.loads(target_settings.read_text(encoding="utf-8"))
+    profile.setdefault("llm", {})["reasoning_effort"] = reasoning_effort
+    condenser = profile.get("condenser")
+    if isinstance(condenser, dict):
+        condenser_llm = condenser.get("llm")
+        if isinstance(condenser_llm, dict):
+            condenser_llm["reasoning_effort"] = reasoning_effort
+    with NamedTemporaryFile(
+        mode="w", encoding="utf-8", dir=target_dir, delete=False
+    ) as temporary:
+        json.dump(profile, temporary, separators=(",", ":"))
+        temporary.write("\n")
+        temporary_path = Path(temporary.name)
+    os.replace(temporary_path, target_settings)
+    return target_dir
 
 
 def codex_output_schema() -> dict[str, object]:

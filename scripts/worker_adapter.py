@@ -175,7 +175,71 @@ def failure(worker_name: str, summary: str, next_step: NextStep, stdout: str = "
     )
 
 
-def task_prompt(task: Task) -> str:
+def parse_openhands_result(output: str) -> WorkerResult | None:
+    """Read a strict result or normalise OpenHands' Finish-action message.
+
+    OpenHands emits its final answer inside a JSONL ``FinishAction`` event.
+    Local models sometimes omit the supervisor's convenience fields even after
+    being asked for the full contract. A normalised result is still sent to
+    independent precheck/final-review gates, rather than losing completed work
+    merely because its transport wrapper differs from Qwen/Codex.
+    """
+
+    strict = parse_worker_result(output)
+    if strict:
+        return strict
+
+    pending: list[object] = [output]
+    while pending:
+        value = pending.pop(0)
+        if isinstance(value, str):
+            try:
+                pending.append(json.loads(value))
+            except json.JSONDecodeError:
+                continue
+            continue
+        if isinstance(value, list):
+            pending.extend(value)
+            continue
+        if not isinstance(value, dict):
+            continue
+        pending.extend(value.values())
+        status_value = value.get("status")
+        if status_value not in {status.value for status in Status}:
+            continue
+        status = Status(status_value)
+        raw_documentation = value.get("documentation")
+        documentation_summary = (
+            json.dumps(raw_documentation, sort_keys=True)
+            if isinstance(raw_documentation, dict)
+            else "OpenHands final response did not include a documentation summary."
+        )
+        return WorkerResult(
+            status=status,
+            summary=str(value.get("summary") or "OpenHands completed its Finish action."),
+            changed_files=value.get("changed_files") if isinstance(value.get("changed_files"), list) else [],
+            test_result=(
+                value.get("test_result")
+                if isinstance(value.get("test_result"), str)
+                else json.dumps(value.get("test_result", ""), sort_keys=True)
+            ),
+            acceptance_results=(
+                value.get("acceptance_results") if isinstance(value.get("acceptance_results"), list) else []
+            ),
+            documentation={"summary": documentation_summary},
+            known_limitations=(
+                value.get("known_limitations") if isinstance(value.get("known_limitations"), list) else []
+            ),
+            browser_coverage=str(value.get("browser_coverage") or ""),
+            recommended_next_step=(
+                value.get("recommended_next_step")
+                or (NextStep.COMPLETE.value if status is Status.PASS else NextStep.USE_CODEX.value)
+            ),
+        )
+    return None
+
+
+def task_prompt(task: Task, *, completion_mode: str = "structured_output") -> str:
     task_json = json.dumps(model_to_dict(task), indent=2)
     static_browser_instructions = ""
     if os.getenv("SUPERVISOR_BROWSER_QA_MODE") == "static":
@@ -211,6 +275,30 @@ only when a concrete implementation or acceptance gap remains that you cannot
 finish; the supervisor will retry this same Codex final-review stage up to its
 configured limit.
 """
+    if completion_mode == "finish_action":
+        completion_protocol = """Completion protocol:
+- OpenHands has no `structured_output` tool. Your final action must be its
+  Finish action, and the Finish action's message must be exactly one valid
+  WorkerResult JSON object: no prose, Markdown fences, or explanation before
+  or after it.
+- Use native nested JSON values: `evidence` and `documentation` are objects,
+  while `acceptance_results` is an array. Include every required field.
+- If a check cannot run, return a `repairable_failure` or
+  `needs_user_review` object immediately with the exact reason. Never wait
+  silently for a tool or model request to recover.
+"""
+    else:
+        completion_protocol = """Completion protocol:
+- Your final action MUST be the `structured_output` tool supplied by
+  `--json-schema`. Do not end with prose, Markdown, or a hand-written JSON
+  response.
+- Use native nested JSON values in that tool call: `evidence` and
+  `documentation` are objects, while `acceptance_results` is an array. Never
+  put JSON text inside quotes for any of those fields.
+- If a check cannot run, return a structured `repairable_failure` or
+  `needs_user_review` result immediately with the exact reason. Never wait
+  silently for a tool or model request to recover.
+"""
     return f"""You are the coding worker for one isolated runbook task.
 
 Work only in the repository passed as your working directory. Do not publish,
@@ -242,16 +330,7 @@ Efficient investigation rules (especially important for local models):
 - If a tool reports a missing file, treat it as non-blocking and continue with
   the repository evidence you already have.
 
-Completion protocol:
-- Your final action MUST be the `structured_output` tool supplied by
-  `--json-schema`. Do not end with prose, Markdown, or a hand-written JSON
-  response.
-- Use native nested JSON values in that tool call: `evidence` and
-  `documentation` are objects, while `acceptance_results` is an array. Never
-  put JSON text inside quotes for any of those fields.
-- If a check cannot run, return a structured `repairable_failure` or
-  `needs_user_review` result immediately with the exact reason. Never wait
-  silently for a tool or model request to recover.
+{completion_protocol}
 
 Your final WorkerResult must include all of the following:
 - `acceptance_results`: one entry for every task acceptance criterion, with
