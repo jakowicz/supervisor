@@ -14,7 +14,7 @@ from langgraph.graph import END, START, StateGraph
 from .models import AcceptanceResult, CriterionStatus, DocumentationReport, NextStep, RunEvent, Status, Task, WorkerResult
 from .completion_audit import audit
 from .git_publish import preflight, publish
-from .routing import next_route
+from .routing import first_stage, next_route
 from .state import SupervisorState
 from .workers import browser, codex, coder, openhands, tester, visual_review
 from .observability import SupervisorTelemetry
@@ -169,7 +169,7 @@ def create_graph(config: SupervisorConfig):
         context = config.telemetry.stage(state["task"], state.get("run_id", ""), "prepare", "Git baseline guard", "git", 0) if config.telemetry else None
         with (context or nullcontext(None)) as span:
             result = preflight(state["task"], config.repo_root)
-            route = "qwen" if result.status is Status.PASS else "user_review"
+            route = first_stage() if result.status is Status.PASS else "user_review"
             if config.telemetry:
                 config.telemetry.complete_stage(span, result, route)
         event = RunEvent(stage="prepare", agent="Git baseline guard", model="git", attempt=0, status=result.status, summary=result.summary, route=route, result=result)
@@ -183,7 +183,7 @@ def create_graph(config: SupervisorConfig):
             "worker_results": [*state.get("worker_results", []), result],
             "events": [*state.get("events", []), event],
             "route": route,
-            "active_agent": "qwen",
+            "active_agent": first_stage(),
             "notes": [*state.get("notes", []), f"prepare: {result.summary}"],
         }
 

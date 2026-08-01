@@ -40,6 +40,8 @@ DEFAULTS = {
     "LANGFUSE_BASE_URL": "http://127.0.0.1:3001",
     "LLM_BASE_URL": "http://127.0.0.1:11434/v1",
     "CODEX_MODEL": "gpt-5.6-terra",
+    "SUPERVISOR_CODING_AGENTS": "qwen,openhands,codex",
+    "SUPERVISOR_AGENT_ORDER": "",
     # These bundled adapters are safe defaults: they still need their
     # respective CLI/provider installed, and editing remains disabled until
     # the user explicitly enables SUPERVISOR_ALLOW_AUTONOMOUS_WRITES.
@@ -276,6 +278,8 @@ def configure(path: Path) -> None:
     values["SUPERVISOR_WORKER_TIMEOUT_SECONDS"] = _prompt("Worker timeout in seconds", _value(existing, "SUPERVISOR_WORKER_TIMEOUT_SECONDS"))
     values["SUPERVISOR_QWEN_IDLE_TIMEOUT_SECONDS"] = _prompt("Qwen no-progress timeout in seconds", _value(existing, "SUPERVISOR_QWEN_IDLE_TIMEOUT_SECONDS"))
     values["SUPERVISOR_PROGRESS_HEARTBEAT_SECONDS"] = _prompt("Terminal heartbeat in seconds", _value(existing, "SUPERVISOR_PROGRESS_HEARTBEAT_SECONDS"))
+    values["SUPERVISOR_CODING_AGENTS"] = _prompt("Coding agents in execution order (for example codex)", _value(existing, "SUPERVISOR_CODING_AGENTS"))
+    values["SUPERVISOR_AGENT_ORDER"] = _prompt("Full stage order, comma-separated (blank uses the Supervisor default)", _value(existing, "SUPERVISOR_AGENT_ORDER"))
 
     print("\nAgent retry policy (total implementation attempts; Codex final repairs are additional after its first review):")
     for key, label in (

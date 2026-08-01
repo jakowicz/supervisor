@@ -17,6 +17,40 @@ _LIMIT_ENVIRONMENT_KEYS = {
     "codex": "SUPERVISOR_CODEX_ATTEMPTS",
     "codex_final": "SUPERVISOR_CODEX_FINAL_ATTEMPTS",
 }
+_IMPLEMENTATION_AGENTS = ("qwen", "openhands", "codex")
+_ALL_STAGES = ("qwen", "openhands", "codex", "precheck", "codex_final", "test", "browser", "visual_review", "completion_audit", "git_publish")
+
+
+def implementation_agents() -> tuple[str, ...]:
+    """Return the project-selected implementation agents in execution order."""
+
+    configured = os.getenv("SUPERVISOR_CODING_AGENTS", ",".join(_IMPLEMENTATION_AGENTS))
+    agents = tuple(agent.strip().lower() for agent in configured.split(",") if agent.strip().lower() in _IMPLEMENTATION_AGENTS)
+    return agents or _IMPLEMENTATION_AGENTS
+
+
+def primary_agent() -> str:
+    return implementation_agents()[0]
+
+
+def configured_stage_order() -> tuple[str, ...]:
+    """Return an explicit project pipeline, or an empty tuple for legacy routing."""
+
+    configured = os.getenv("SUPERVISOR_AGENT_ORDER", "")
+    stages = tuple(stage.strip().lower() for stage in configured.split(",") if stage.strip().lower() in _ALL_STAGES)
+    return stages
+
+
+def first_stage() -> str:
+    return configured_stage_order()[0] if configured_stage_order() else primary_agent()
+
+
+def next_configured_stage(stage: str) -> str:
+    stages = configured_stage_order()
+    try:
+        return stages[stages.index(stage) + 1]
+    except (ValueError, IndexError):
+        return "accept"
 
 
 def agent_limits() -> dict[str, int]:
@@ -42,25 +76,28 @@ def next_agent(current_agent: str, attempts: dict[str, int]) -> str:
         limit += 1
     if attempts.get(current_agent, 0) < limit:
         return current_agent
-    return {
-        "qwen": "openhands",
-        "openhands": "codex",
-        "codex": "user_review",
-        "codex_final": "user_review",
-    }[current_agent]
+    if current_agent in _IMPLEMENTATION_AGENTS:
+        agents = implementation_agents()
+        try:
+            return agents[agents.index(current_agent) + 1]
+        except (ValueError, IndexError):
+            return "user_review"
+    return "user_review"
 
 
 def next_route(stage: str, result: WorkerResult, active_agent: str, attempts: dict[str, int]) -> str:
     """Return a graph node name from evidence and bounded retry counts."""
 
     if result.status is Status.PASS:
-        return {
+        if configured_stage_order():
+            return next_configured_stage(stage)
+        routes = {
             # A successful primary/fallback implementation is always examined
             # and, where necessary, repaired by Codex before acceptance.  A
             # deterministic precheck comes first: do not spend the final
             # review budget on a candidate that does not even compile.
-            "qwen": "precheck",
-            "openhands": "precheck",
+            "qwen": "precheck" if "codex" in implementation_agents() else "test",
+            "openhands": "precheck" if "codex" in implementation_agents() else "test",
             # Codex already performed the implementation when it was the
             # fallback, so a second Codex pass would be redundant.
             "codex": "test",
@@ -71,7 +108,8 @@ def next_route(stage: str, result: WorkerResult, active_agent: str, attempts: di
             "visual_review": "completion_audit",
             "completion_audit": "git_publish",
             "git_publish": "accept",
-        }[stage]
+        }
+        return routes[stage]
     if result.status is Status.NEEDS_USER_REVIEW:
         return "user_review"
     # Validation infrastructure is not a coding-agent defect. Preserve evidence
