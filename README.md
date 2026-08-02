@@ -1,8 +1,11 @@
 # Supervisor — evidence-gated LangGraph task orchestration
 
 This package orchestrates one small, reviewable runbook task at a time. It
-does not run providers by default. Instead, it has safe worker adapters which
-return a structured `environment_failure` until an explicit command is configured.
+does not impose an application stack, model provider, or QA workflow. Each
+project's ignored `supervisor/.env` is the source of truth for its repository
+path, enabled agents, execution order, worker commands, validation commands,
+timeouts, publishing policy, observability, and platform-specific tooling.
+Supervisor provides evidence-gated orchestration around that project contract.
 
 ## Quick start
 
@@ -62,12 +65,10 @@ dashboard preference, and Langfuse project credentials. It reuses the one
 shared Langfuse service at `http://127.0.0.1:3001` when it is already running.
 Use `--non-interactive` only for automated provisioning.
 
-Every setup prompt shows a safe default where one exists. This includes paths,
-database location, dashboard port, timeouts, retry budgets, Git policy, the
-shared Langfuse endpoint, and the bundled Qwen, OpenHands, Codex, and browser
-worker commands. Provider-specific values—model names, API keys, and an
-independent visual-review command—remain blank by design rather than being
-guessed.
+Every setup prompt shows a safe default where one exists. The selected project
+profile is only a starting point: inspect and change the generated `.env` to
+choose the agents, stage order, validation commands, models, browser/visual QA,
+and publishing policy appropriate to that project.
 
 When configuration needs Langfuse project keys, Supervisor first checks the
 shared local service. If it is not running, it asks permission to start the
@@ -110,8 +111,10 @@ the controlled project's `.state/` directory—not inside `supervisor/`.
 ## Prerequisites
 
 - Python 3.10 or newer (the current machine's Python 3.9.6 is too old)
-- Flutter on `PATH`
-- Node/npm only when browser QA is enabled
+- The executables named by your project's `.env` validation and worker commands
+- Node/npm and a browser only when the configured browser QA command needs them
+- A game profile starts with Flutter validation commands; non-game projects do
+  not require Flutter unless they configure it
 
 ## Setup
 
@@ -152,9 +155,9 @@ python3.11 -m venv .venv
 Runtime evidence is deliberately stored at `<project>/.state/`; no operational
 `.state/` directory is created inside the reusable `supervisor/` submodule.
 
-Set `SUPERVISOR_REPO_ROOT` to the game checkout if invoking from another
-directory. Add worker command adapters only after verifying their credentials,
-permissions, and worktree handling.
+Set `SUPERVISOR_REPO_ROOT` to the controlled project root if invoking from
+another directory. Add worker command adapters only after verifying their
+credentials, permissions, and worktree handling.
 
 For a reusable project setup, run the interactive configuration CLI after the
 editable install:
@@ -171,12 +174,38 @@ a free localhost port when its preferred port is occupied. When installed as
 `<project-root>/.state/supervisor.sqlite3`, so project evidence remains outside
 the reusable submodule.
 
-### Qwen and Codex adapters
+### Project configuration is the contract
 
-The included adapters translate Qwen Code and Codex CLI output into the required
-`WorkerResult` JSON object. Neither runs until you explicitly set
-`SUPERVISOR_ALLOW_AUTONOMOUS_WRITES=true`; this prevents an accidental
-supervisor invocation from changing the shared checkout.
+The `.env` file—not this README—defines how a particular project runs. Typical
+settings include:
+
+```dotenv
+# Select the implementation agents and pipeline for this project.
+SUPERVISOR_CODING_AGENTS=codex
+SUPERVISOR_AGENT_ORDER=codex,test,completion_audit,git_publish
+
+# Define every deterministic validation command in execution order.
+SUPERVISOR_TEST_COMMANDS=["npm test","npm run build"]
+
+# Configure the commands and publication policy that this project permits.
+CODEX_COMMAND=./.venv/bin/python scripts/codex_worker.py {task_file}
+SUPERVISOR_ALLOW_AUTONOMOUS_WRITES=true
+SUPERVISOR_AUTO_COMMIT=false
+SUPERVISOR_AUTO_PUSH=false
+```
+
+The game profile supplies Flutter analysis, tests, and web release build as an
+editable `SUPERVISOR_TEST_COMMANDS` default. A document-only project may use
+Codex alone. A native application, language implementation, operating system,
+or service supplies its own commands. Re-run `supervisor configure` whenever
+the project contract changes.
+
+### Optional bundled adapters
+
+The included Qwen, OpenHands, and Codex adapters translate configured CLI output
+into the required `WorkerResult` JSON object. They are optional examples; a
+project enables only the adapters named in its `.env`. No coding adapter runs
+until `SUPERVISOR_ALLOW_AUTONOMOUS_WRITES=true` is set.
 
 Add these lines to `.env` when ready:
 
@@ -237,26 +266,22 @@ supervisor-run --task-id T01 --title "Inventory reconciliation" --dry-run
 pytest
 ```
 
-The dry run exercises the complete graph without running Flutter, a browser, or
-an external coding provider. It ends at `needs_user_review` because no human or
-visual-review command has accepted the evidence.
+The dry run exercises the configured graph without invoking external coding
+providers, validation commands, browsers, or publication. It reports the
+configured route and evidence contract without changing the project.
 
 ## Enable real workers incrementally
 
-1. Configure `QWEN_CODER_COMMAND`; the included adapter accepts `{task_file}`
-   and emits exactly one `WorkerResult` JSON object.
-2. Run a task. A successful Qwen/OpenHands pass first receives Codex final
-   verification and repair; then the test worker executes `flutter analyze`,
-   `flutter test`, and `flutter build web --release`.
-3. Configure `BROWSER_QA_COMMAND` to run Playwright and emit `WorkerResult`,
-   including screenshot paths and browser logs.
-4. Configure `VISUAL_REVIEW_COMMAND` to perform independent review. A task is
-   accepted only when it returns `status: "pass"`.
-5. The included OpenHands and Codex adapters are ready once their CLIs are
-   authenticated/configured. The graph routes environment failures to
-   OpenHands, repeated or complex failures to Codex, and risky/unclear tasks to
-   user review. A successful Qwen or OpenHands implementation always receives
-   a separate Codex final verifier/fixer pass before deterministic QA begins.
+1. Configure one or more coding-adapter commands and list them in
+   `SUPERVISOR_CODING_AGENTS`. Every adapter receives `{task_file}` and must
+   emit one `WorkerResult` JSON object.
+2. Define the project validation contract in `SUPERVISOR_TEST_COMMANDS`.
+3. Add browser or visual-review commands only if those checks are meaningful
+   for the selected platforms and product surface.
+4. Set the intended execution order, retry budgets, write policy, and Git
+   policy in `.env`.
+5. Run a small runbook first. Environment failures and unproven acceptance
+   criteria stop for review; they do not become implicit success.
 
 ## Execution flow
 
@@ -266,57 +291,35 @@ flowchart TB
     load --> resumed{"Checkpoint or recovered result available?"}
     resumed -- "Yes" --> resume["Resume at the saved next stage"]
     resumed -- "No" --> prepare["Prepare: Git baseline guard"]
-    prepare -- "Pass" --> qwen["Qwen implementation"]
+    prepare -- "Pass" --> coding["Configured coding agent"]
     prepare -- "Blocked" --> review["Needs user review"]
 
-    qwen -- "Pass" --> precheck["Deterministic precheck"]
-    qwen -- "Failure" --> next_agent{"Next eligible coding agent?"}
-    precheck -- "Pass" --> codex_final["Codex final verifier/fixer\n(up to 3 attempts)"]
-    precheck -- "Repairable failure" --> next_agent
-    precheck -- "Environment failure" --> review
-
-    next_agent -- "Qwen retry, if configured" --> qwen
-    next_agent -- "OpenHands" --> openhands["OpenHands implementation"]
-    next_agent -- "Codex" --> codex["Codex implementation\n(up to 3 attempts)"]
+    coding -- "Pass" --> validation["Configured validation stages"]
+    coding -- "Failure" --> next_agent{"Next configured coding agent?"}
+    next_agent -- "Retry or fallback" --> coding
     next_agent -- "No budget remains" --> review
-    openhands -- "Pass" --> precheck
-    openhands -- "Failure" --> next_agent
-    codex -- "Pass" --> tests["Independent test worker"]
-    codex -- "Failure" --> next_agent
-
-    codex_final -- "Pass" --> tests
-    codex_final -- "Retryable failure" --> codex_final
-    codex_final -- "Exhausted or unclear" --> review
-    tests -- "Pass" --> browser["Browser QA\nrelease build + Playwright"]
-    tests -- "Repairable failure" --> next_agent
-    tests -- "Environment failure" --> review
-    browser -- "Pass" --> visual["Visual review"]
-    browser -- "Repairable failure" --> next_agent
-    browser -- "Environment failure" --> review
-    visual -- "Pass" --> audit["Completion-contract audit"]
-    visual -- "Repairable failure" --> next_agent
-    visual -- "Needs review or environment failure" --> review
-    audit -- "Pass" --> publish["Git publisher\ncommit and optional push"]
+    validation -- "Pass" --> audit["Configured completion audit"]
+    validation -- "Failure or unavailable" --> review
+    audit -- "Pass" --> publish["Configured Git publisher"]
     audit -- "Failure" --> next_agent
     publish -- "Pass" --> accepted["Accepted task\nReports, logs, SQLite, and telemetry updated"]
     publish -- "Failure" --> next_agent
 ```
 
-By default, coding retries are Qwen once, OpenHands once, then Codex up to
-three times. A coding-stage pass by Qwen or OpenHands receives the separate
-Codex final verification pass; a Codex fallback pass proceeds directly to the
-independent QA stages. Environment failures do not consume implementation
-retries, and a task range runs sequentially, stopping before later tasks when
-an earlier task is not accepted.
+Retry budgets, coding fallback order, QA stages, and publication are all
+project policy defined in `.env`. Environment failures do not consume coding
+budget, and a task range runs sequentially, stopping before later tasks when an
+earlier task is not accepted.
 
-Evidence and run history are stored in `<project-root>/.state/supervisor.sqlite3`; screenshots
-belong in `../../artifacts/qa/<task-id>/`.
+Evidence and run history are stored in `<project-root>/.state/supervisor.sqlite3`.
+Configured QA commands record their evidence in the project-defined location.
 
 The same SQLite database also holds durable task checkpoints. During a coding
-run the supervisor records the active process, Qwen session ID, last tool
-activity, changed-file fingerprint, and the next pipeline stage. If a run is
-interrupted, invoke the same task again: it resumes the saved Qwen session and
-continues at the unfinished stage rather than reimplementing completed work.
+run the supervisor records the active process, resumable agent-session metadata
+where the adapter supports it, last tool activity, changed-file fingerprint,
+and the next pipeline stage. If a run is interrupted, invoke the same task
+again: it resumes available session state and continues at the unfinished stage
+rather than reimplementing completed work.
 Only one live supervisor may claim a task at a time. Once a task is accepted at
 a recorded Git commit, a repeat invocation is a safe no-op; create a new task
 ID for additional scope.
@@ -332,17 +335,15 @@ supervisor-run --task-id D008 --retry
 The retried agent receives the concrete failing test/browser evidence; it does
 not silently discard the candidate or reuse a completed agent session.
 
-If an interrupted Qwen stage already emitted a valid final `WorkerResult` in
-its raw live log, the next invocation recovers that result and begins with the
-independent test stage. It does not ask a coding agent to rediscover or rewrite
-the task. An incomplete newest retry log is skipped in favour of the latest
-completed Qwen result; test/browser/audit gates still decide whether the work
-is actually accepted.
+If a resumable coding stage already emitted a valid final `WorkerResult` in its
+raw live log, the next invocation can recover that result and continue at the
+next configured validation stage. It does not ask a coding agent to rediscover
+or rewrite the task. Final acceptance still depends on the configured evidence
+and audit gates.
 
 When Langfuse observability is enabled, each completed stage is exported with
-its full evidence and Qwen additionally emits short live checkpoint events as
-new output arrives. Those live events are flushed while Qwen is still running;
-they include the current continuation summary and a bounded new-output excerpt.
+its full evidence. Adapters that support live checkpoints can also emit bounded
+progress summaries while they are running.
 
 ## Inspecting reports
 
@@ -362,9 +363,10 @@ transcripts remain in the stage logs and SQLite rather than being repeated in
 the terminal. Add `--output-format json` only when a script needs the complete
 machine-readable run payload.
 
-## Browser QA and metrics dashboard
+## Optional browser QA and metrics dashboard
 
-Install Playwright once, then its Chromium browser:
+When the project configures the bundled Playwright browser worker, install
+Playwright and its Chromium browser once:
 
 ```bash
 cd browser
@@ -372,19 +374,15 @@ npm install
 npx playwright install chromium
 ```
 
-The configured browser worker serves Flutter's release web build locally, checks
-that the rendered Flutter shell is present at desktop/mobile viewports, captures
-screenshots, and fails on browser console/page errors. Flutter widget tests
-remain responsible for semantic tab/navigation coverage because the current web
-renderer exposes the game UI through a canvas rather than accessible DOM text.
-Evidence is saved below `artifacts/qa/<task-id>/`.
+The bundled worker is a Flutter-web/Playwright example. Other projects should
+set `BROWSER_QA_COMMAND` to their own server, device, integration, or visual
+validation command—or omit the browser stage entirely. Evidence locations are
+part of the project's configured QA contract.
 
-Every task runs `browser/tests/smoke/`. Browser-impacting tasks must add or
-update a targeted spec under `browser/tests/changes/`, declare it with
-`--playwright-spec`, and explain changed coverage in their completion report.
-On task sequences 5, 10, 15, and so on, the browser worker runs the whole suite;
-otherwise it runs smoke plus the task-specific specs. Domain-only tasks record
-why no browser spec changed.
+For the bundled worker, browser-impacting tasks declare their targeted
+Playwright coverage and the worker runs its configured smoke/full-suite policy.
+Projects that use another browser or device command define their own test paths,
+evidence, and cadence in that command.
 
 ## Runbooks
 
@@ -467,30 +465,24 @@ review the runbook first so the stored task report remains auditable.
 
 ## Agents and stages
 
-The supervisor is deliberately a small team with separate implementation and
-verification responsibilities. A passing coding-agent response never accepts
-its own work.
+The configured environment defines the project pipeline. Supervisor's job is to
+run the named stages, capture evidence, enforce the task contract, and stop for
+review when a configured stage cannot prove success. A coding agent never
+accepts its own work.
 
-| Name in logs | What it is | Used for |
-| --- | --- | --- |
-| **Qwen3 Coder** (`qwen`) | Qwen Code CLI, normally configured to use the local `qwen3-coder-next` Ollama model. | Primary implementation attempt. |
-| **OpenHands** (`openhands`) | OpenHands headless CLI, configured with the selected local/remote model. | One fallback implementation attempt if Qwen exhausts its retry budget. |
-| **Codex** (`codex`) | Codex CLI in workspace-write sandbox mode. | Up to three fallback implementation/repair attempts after OpenHands. A successful fallback Codex implementation proceeds directly to deterministic QA. |
-| **Codex final verifier/fixer** (`codex_final`) | The same Codex CLI, invoked with a verification-and-repair brief. | Mandatory after a successful Qwen or OpenHands implementation. Its initial independent review does not consume repair budget; after a demonstrated QA failure it receives the raw failing evidence and may repair/retry up to three times. |
-| **Independent test worker** (`test`) | Deterministic project-configured commands, not an LLM. | Runs the ordered `SUPERVISOR_TEST_COMMANDS` validation contract after a coding pass. Game projects start with Flutter analyse, test, and release-build commands. |
-| **Browser QA worker** (`browser`) | Local web server plus Playwright Chromium tests at desktop and mobile viewports. | Runs stable smoke tests, task-specific browser checks, captures screenshots, and fails on page/console errors. Every fifth task sequence runs the full suite. |
-| **Visual QA reviewer** (`visual_review`) | Optional independent visual-review command. | Reviews visual evidence when configured; a missing reviewer requests user review rather than silently accepting UI work. |
-| **Completion-contract auditor** (`completion_audit`) | Deterministic policy check, not an LLM. | Verifies that every acceptance criterion has evidence, documentation was considered, required browser coverage exists, and limitations are declared. |
-| **Git baseline guard** (`prepare`) | Deterministic Git preflight. | When auto-publishing is enabled, requires a clean starting worktree so the final commit belongs only to this task. |
-| **Git publisher** (`git_publish`) | Deterministic Git step. | After every validation gate passes, optionally commits and pushes the task according to `SUPERVISOR_AUTO_COMMIT` and `SUPERVISOR_AUTO_PUSH`. |
+| Configuration | Project-owned decision |
+| --- | --- |
+| `SUPERVISOR_CODING_AGENTS` | Which implementation adapters are eligible and their order. |
+| `SUPERVISOR_AGENT_ORDER` | Which configured stages run for this project. |
+| `*_COMMAND` | The exact adapter, browser, visual-review, or project command to invoke. |
+| `SUPERVISOR_TEST_COMMANDS` | Ordered deterministic validation commands. |
+| Retry, timeout, and write variables | How much autonomous work is permitted. |
+| Git and observability variables | Whether accepted work may publish and where evidence is exported. |
 
-The coding fallback order is Qwen (one total attempt), then OpenHands (one),
-then Codex (three). When Qwen or OpenHands succeeds, the route is
-`qwen|openhands → codex_final → test → browser → visual_review → completion_audit`.
-When fallback Codex succeeds, it uses
-`codex → test → browser → visual_review → completion_audit` and does not run a
-second, redundant Codex review. Test/browser/visual infrastructure failures
-pause for review rather than using up a coding-agent retry.
+Bundled adapters and common stages such as `codex`, `test`, `browser`,
+`visual_review`, `completion_audit`, and `git_publish` are available where
+configured; they are not a universal required pipeline. Use the `.env` for the
+actual project contract and `supervisor configure` to edit it interactively.
 
 When `SUPERVISOR_AUTO_COMMIT=false`, the Git publisher records that no commit
 was created but still accepts a task once all implementation and QA gates pass.
@@ -513,7 +505,7 @@ completed stage also writes its own human-readable raw-output log:
 
 ```text
 ../.state/live/task-d006-run-11-stage-01-agent-prepare-<run-id>.log
-../.state/live/task-d006-run-11-stage-02-agent-qwen-<run-id>.log
+../.state/live/task-d006-run-11-stage-02-agent-<configured-stage>-<run-id>.log
 ../.state/live/task-d006-run-11-stage-03-agent-test-<run-id>.log
 ../.state/live/task-d006-run-11-stage-00-agent-supervisor-<run-id>.log
 ```
@@ -603,17 +595,16 @@ Use a positive character limit if you later want compact remote telemetry.
 
 ## Production execution policy
 
-- Qwen receives one total coding attempt.
-- OpenHands receives one total coding attempt after Qwen is exhausted.
-- Codex receives up to three total coding attempts after OpenHands is exhausted.
-- Every successful coding pass runs `flutter analyze`, `flutter test`, and
-  `flutter build web --release`, then browser QA and visual review.
-- A missing/broken test, browser, or visual-review environment stops for user
-  repair rather than consuming coding-agent budget.
-- A deterministic completion-contract audit blocks acceptance unless the final
-  coding agent reports evidence for every acceptance criterion, README/docs
-  review/update decisions, exact checks, and known limitations. Independent
-  test, browser, and visual stages remain required in addition to this report.
+- The `.env` pipeline defines coding attempts, fallback order, validation,
+  browser/device checks, review, and publishing for the project.
+- `SUPERVISOR_TEST_COMMANDS` is the deterministic validation contract; a game
+  profile starts with Flutter commands, while every other project can provide
+  its own tools and commands.
+- A missing or broken configured validation environment stops for review rather
+  than consuming coding-agent budget.
+- The completion audit blocks acceptance unless the configured stages provide
+  evidence for every acceptance criterion, documentation decisions, exact
+  checks, and known limitations.
 - SQLite keeps the full event log, including stage, worker, configured model,
   attempt, route, summary, structured result, logs, and screenshot paths.
   Each completed run also writes a skim-friendly agent/progression summary to
