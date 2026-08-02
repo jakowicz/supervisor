@@ -236,9 +236,15 @@ def test_game_design_completion_gate_requires_accepted_final_audit(tmp_path: Pat
     workspace = tmp_path / "project"
     planning = workspace / "planning"
     planning.mkdir(parents=True)
+    specification = workspace / "specification"
+    specification.mkdir()
+    (specification / "02-game-design-bible.json").write_text(
+        '{"selected_modules":["trivia"],"design_units":[{"id":"GAME-QUESTION-BANK","module":"trivia"}]}',
+        encoding="utf-8",
+    )
     (planning / "game-design-manifest.json").write_text(
         '{"status":"accepted","final_audit":{"task_id":"G0099","status":"accepted"},'
-        '"modules":[{"module":"trivia","status":"accepted","design_output_paths":["specification/trivia.md"]}],'
+        '"modules":[{"module":"trivia","status":"accepted","design_output_paths":["specification/trivia.md"],"game_design_ids":["GAME-QUESTION-BANK"]}],'
         '"pending_modules":[],"blocked_modules":[]}',
         encoding="utf-8",
     )
@@ -250,6 +256,14 @@ def test_game_design_completion_gate_requires_accepted_final_audit(tmp_path: Pat
     store.finish_task(TaskRun(task=Task(task_id="G0099", title="Audit"), run_id="audit-run", status=Status.PASS, route="accepted", worker_results=[]))
     store.close()
     assert cli._game_design_completion_error(workspace, database) is None
+
+    (planning / "game-design-manifest.json").write_text(
+        '{"status":"accepted","final_audit":{"task_id":"G0099","status":"accepted"},'
+        '"modules":[{"module":"trivia","status":"accepted","design_output_paths":["specification/trivia.md"],"game_design_ids":[]}],'
+        '"pending_modules":[],"blocked_modules":[]}',
+        encoding="utf-8",
+    )
+    assert cli._game_design_completion_error(workspace, database) == "game-design manifest does not cover selected GAME-* units for trivia"
 
 
 def test_invalid_accepted_authoring_task_is_reopened(tmp_path: Path):

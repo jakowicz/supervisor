@@ -729,6 +729,27 @@ def _game_design_completion_error(workspace: Path, database_path: Path) -> str |
         return "game-design manifest has no completed modules"
     if any(not isinstance(module, dict) or module.get("status") != "accepted" or not module.get("design_output_paths") for module in modules):
         return "game-design manifest contains incomplete module evidence"
+    bible_path = workspace / "specification" / "02-game-design-bible.json"
+    if not bible_path.is_file():
+        return "missing specification/02-game-design-bible.json"
+    try:
+        bible = json.loads(bible_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return "02-game-design-bible.json is not valid JSON"
+    if not isinstance(bible, dict):
+        return "02-game-design-bible.json must be a JSON object"
+    selected_modules = {value for value in bible.get("selected_modules", []) if isinstance(value, str)}
+    if not selected_modules:
+        return "game design bible has no selected modules"
+    by_module = {entry.get("module"): entry for entry in modules if isinstance(entry, dict) and isinstance(entry.get("module"), str)}
+    if set(by_module) != selected_modules:
+        return "game-design manifest modules do not exactly match selected game modules"
+    design_units = [entry for entry in bible.get("design_units", []) if isinstance(entry, dict)]
+    for module in selected_modules:
+        required_ids = {entry["id"] for entry in design_units if entry.get("module") == module and isinstance(entry.get("id"), str)}
+        covered_ids = {value for value in by_module[module].get("game_design_ids", []) if isinstance(value, str)}
+        if not required_ids or not required_ids.issubset(covered_ids):
+            return f"game-design manifest does not cover selected GAME-* units for {module}"
     store = RunStore(database_path)
     try:
         state = store.state_for(audit["task_id"])
