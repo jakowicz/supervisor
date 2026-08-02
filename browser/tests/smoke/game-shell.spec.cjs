@@ -10,13 +10,12 @@ test('boot renders the Flutter Hold shell without browser errors', async ({ page
   page.on('pageerror', error => browserErrors.push(error.message));
 
   await page.goto('/', { waitUntil: 'networkidle' });
-  // Flutter's canvas renderer does not expose widget text to Playwright until
+  // Flutter's renderer does not expose widget text to Playwright until
   // a full accessibility semantics tree is enabled. The app's own widget tests
   // cover tab semantics; this browser gate verifies the rendered shell,
   // console/page errors, and screenshot evidence at real viewports.
   await page.waitForTimeout(1_500);
-  const canvasCount = await page.locator('canvas').count();
-  expect(canvasCount).toBeGreaterThan(0);
+  await expect(page.getByText('Your mountain home', { exact: true })).toHaveCount(1);
 
   const artifactDir = process.env.QA_ARTIFACT_DIR;
   if (artifactDir) {

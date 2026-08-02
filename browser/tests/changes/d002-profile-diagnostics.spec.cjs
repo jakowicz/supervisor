@@ -10,6 +10,6 @@ test('D002: profile diagnostics load without browser errors', async ({ page }) =
   await page.goto('/', { waitUntil: 'networkidle' });
   await page.waitForTimeout(1600);
 
-  expect(await page.locator('canvas').count()).toBeGreaterThan(0);
+  await expect(page.getByText('Your mountain home', { exact: true })).toHaveCount(1);
   expect(errors).toEqual([]);
 });

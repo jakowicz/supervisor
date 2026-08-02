@@ -10,6 +10,6 @@ test('D005: local-settings-enabled shell loads without browser errors', async ({
   await page.goto('/', { waitUntil: 'networkidle' });
   await page.waitForTimeout(1600);
 
-  expect(await page.locator('canvas').count()).toBeGreaterThan(0);
+  await expect(page.getByText('Your mountain home', { exact: true })).toHaveCount(1);
   expect(errors).toEqual([]);
 });

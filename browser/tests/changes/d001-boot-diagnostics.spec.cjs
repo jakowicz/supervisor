@@ -10,6 +10,6 @@ test('D001: the asset-free project bootstrap loads without browser errors', asyn
   await page.goto('/', { waitUntil: 'networkidle' });
   await page.waitForTimeout(500);
 
-  expect(await page.locator('canvas').count()).toBeGreaterThan(0);
+  await expect(page.getByText('Your mountain home', { exact: true })).toHaveCount(1);
   expect(errors).toEqual([]);
 });

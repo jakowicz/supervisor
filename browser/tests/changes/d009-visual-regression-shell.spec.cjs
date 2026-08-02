@@ -27,7 +27,7 @@ for (const [name, width, height] of profiles) {
     await page.goto('/', { waitUntil: 'networkidle' });
     await page.waitForTimeout(1_500);
 
-    await expect(page.locator('canvas')).not.toHaveCount(0);
+    await expect(page.getByText('Your mountain home', { exact: true })).toHaveCount(1);
     const artifactDir = process.env.QA_ARTIFACT_DIR;
     if (artifactDir) {
       fs.mkdirSync(artifactDir, { recursive: true });

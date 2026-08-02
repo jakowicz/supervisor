@@ -10,7 +10,7 @@ async function loadApp(page) {
   });
 
   await page.goto('/', { waitUntil: 'networkidle' });
-  await expect(page.locator('canvas')).toHaveCount(1);
+  await expect(page.getByText('Your mountain home', { exact: true })).toHaveCount(1);
   return errors;
 }
 
