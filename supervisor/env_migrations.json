@@ -1,0 +1,30 @@
+{
+  "schema_version": 2,
+  "migrations": [
+    {
+      "version": 1,
+      "description": "establish versioned Supervisor environment configuration",
+      "add": {
+        "SUPERVISOR_QWEN_IDLE_TIMEOUT_SECONDS": "600",
+        "SUPERVISOR_PROGRESS_HEARTBEAT_SECONDS": "30",
+        "SUPERVISOR_CODING_AGENTS": "qwen,openhands,codex",
+        "CODEX_MODEL": "gpt-5.6-terra"
+      },
+      "rename": {}
+    },
+    {
+      "version": 2,
+      "description": "move project validation from a built-in framework default to SUPERVISOR_TEST_COMMANDS",
+      "add": {},
+      "rename": {},
+      "conditional_add": [
+        {
+          "when": "flutter_project",
+          "key": "SUPERVISOR_TEST_COMMANDS",
+          "value": "[\"flutter analyze --no-fatal-infos\",\"flutter test\",\"flutter build web --release\"]",
+          "otherwise": "requires a project validation contract; run `supervisor configure`"
+        }
+      ]
+    }
+  ]
+}

@@ -29,6 +29,9 @@ supervisor = "supervisor.manage:main"
 [tool.setuptools.packages.find]
 include = ["supervisor*"]
 
+[tool.setuptools.package-data]
+supervisor = ["env_migrations.json"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]

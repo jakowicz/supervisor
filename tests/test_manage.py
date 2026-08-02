@@ -1,4 +1,5 @@
 import sys
+import re
 from pathlib import Path
 
 from supervisor import manage
@@ -235,7 +236,7 @@ def test_update_workspace_fast_forwards_and_reinstalls(monkeypatch, tmp_path: Pa
     ]
 
 
-def test_migrate_env_adds_missing_keys_preserves_values_and_records_safe_audit(tmp_path: Path):
+def test_migrate_env_adds_missing_keys_preserves_values_and_uses_committed_manifest(tmp_path: Path):
     config = tmp_path / "supervisor" / ".env"
     config.parent.mkdir()
     config.write_text("CODEX_MODEL=project-choice\n", encoding="utf-8")
@@ -243,12 +244,12 @@ def test_migrate_env_adds_missing_keys_preserves_values_and_records_safe_audit(t
     changes = manage.migrate_env(config, project_root=tmp_path)
 
     migrated = config.read_text(encoding="utf-8")
-    audit = (tmp_path / ".state" / "supervisor-env-migrations.log").read_text(encoding="utf-8")
     assert "CODEX_MODEL=project-choice" in migrated
     assert f"SUPERVISOR_ENV_SCHEMA_VERSION={manage.ENV_SCHEMA_VERSION}" in migrated
     assert "SUPERVISOR_QWEN_IDLE_TIMEOUT_SECONDS=600" in migrated
     assert any("added SUPERVISOR_QWEN_IDLE_TIMEOUT_SECONDS" in change for change in changes)
-    assert "project-choice" not in audit
+    assert manage.ENV_MIGRATION_MANIFEST_PATH.is_file()
+    assert not (tmp_path / ".state" / "supervisor-env-migrations.log").exists()
     assert manage.migrate_env(config, project_root=tmp_path) == []
 
 
@@ -260,6 +261,19 @@ def test_migrate_env_seeds_flutter_validation_only_for_flutter_projects(tmp_path
     manage.migrate_env(config, project_root=tmp_path)
 
     assert f"SUPERVISOR_TEST_COMMANDS={manage.GAME_TEST_COMMANDS_JSON}" in config.read_text(encoding="utf-8")
+
+
+def test_env_example_documents_the_current_migration_schema_and_every_migration_key():
+    example = (manage.ENV_MIGRATION_MANIFEST_PATH.parent.parent / ".env.example").read_text(encoding="utf-8")
+
+    assert re.search(rf"^SUPERVISOR_ENV_SCHEMA_VERSION={manage.ENV_SCHEMA_VERSION}$", example, re.MULTILINE)
+    for migration in manage.ENV_MIGRATIONS.values():
+        keys = [*migration["add"], *migration["rename"].values()]
+        keys.extend(addition["key"] for addition in migration.get("conditional_add", []))
+        for key in keys:
+            assert re.search(rf"^#?\s*{re.escape(key)}=", example, re.MULTILINE), (
+                f".env.example must document {key} from Supervisor migration {migration['version']}"
+            )
 
 
 def test_update_workspace_refuses_tracked_changes(monkeypatch, tmp_path: Path):

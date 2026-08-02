@@ -10,7 +10,6 @@ import shutil
 import subprocess
 import sys
 import tempfile
-from datetime import datetime, timezone
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
@@ -64,27 +63,24 @@ GAME_TEST_COMMANDS = (
     "flutter build web --release",
 )
 GAME_TEST_COMMANDS_JSON = json.dumps(GAME_TEST_COMMANDS, separators=(",", ":"))
-ENV_SCHEMA_VERSION = 2
-# Keep migrations append-only. `supervisor update` installs the new checkout,
-# then launches its `env-migrate` command, so a release can safely change how
-# configuration works without replacing a project's private .env file.
-ENV_MIGRATIONS = {
-    1: {
-        "description": "establish versioned Supervisor environment configuration",
-        "add": {
-            "SUPERVISOR_QWEN_IDLE_TIMEOUT_SECONDS": "600",
-            "SUPERVISOR_PROGRESS_HEARTBEAT_SECONDS": "30",
-            "SUPERVISOR_CODING_AGENTS": "qwen,openhands,codex",
-            "CODEX_MODEL": "gpt-5.6-terra",
-        },
-        "rename": {},
-    },
-    2: {
-        "description": "move project validation from a built-in framework default to SUPERVISOR_TEST_COMMANDS",
-        "add": {},
-        "rename": {},
-    },
-}
+ENV_MIGRATION_MANIFEST_PATH = Path(__file__).with_name("env_migrations.json")
+
+
+def _env_migration_manifest() -> dict[str, object]:
+    """Load the Supervisor-owned, committed environment migration history."""
+
+    try:
+        manifest = json.loads(ENV_MIGRATION_MANIFEST_PATH.read_text(encoding="utf-8"))
+        if not isinstance(manifest.get("schema_version"), int) or not isinstance(manifest.get("migrations"), list):
+            raise ValueError("schema_version and migrations are required")
+    except (OSError, json.JSONDecodeError, ValueError) as error:
+        raise RuntimeError(f"Invalid Supervisor environment migration manifest: {ENV_MIGRATION_MANIFEST_PATH}: {error}") from error
+    return manifest
+
+
+ENV_MIGRATION_MANIFEST = _env_migration_manifest()
+ENV_SCHEMA_VERSION = ENV_MIGRATION_MANIFEST["schema_version"]
+ENV_MIGRATIONS = {migration["version"]: migration for migration in ENV_MIGRATION_MANIFEST["migrations"]}
 PROJECT_TYPE_DEFAULTS = {
     "game": {
         "SUPERVISOR_CODING_AGENTS": "codex",
@@ -510,10 +506,10 @@ def _write_env(path: Path, values: dict[str, str]) -> None:
 def migrate_env(path: Path, *, project_root: Path | None = None) -> list[str]:
     """Apply append-only environment migrations without overwriting user values.
 
-    Migrations are deliberately declared above instead of inferred from
-    `.env.example`: an example file cannot safely express renamed variables,
-    changed semantics, or whether a new default is appropriate for an existing
-    project. Audit records never contain configuration values or secrets.
+    The source of truth is the committed `supervisor/env_migrations.json` in
+    the updated Supervisor checkout, not a project runtime log or
+    `.env.example`. Each project keeps only its applied schema version and its
+    own values; existing values are never overwritten.
     """
 
     path = path.expanduser().resolve()
@@ -544,16 +540,15 @@ def migrate_env(path: Path, *, project_root: Path | None = None) -> list[str]:
                 lines.append(f"{key}={value}")
                 existing[key] = value
                 changes.append(f"v{version} added {key}")
-        if version == 2 and existing.get("SUPERVISOR_TEST_COMMANDS") is None and existing.get("SUPERVISOR_TEST_COMMAND") is None:
-            # Preserve prior Flutter behaviour only where the project itself
-            # proves it is Flutter. Every other project must choose its own
-            # validation contract through the interactive configuration flow.
-            if (project_root / "pubspec.yaml").is_file():
-                lines.append(f"SUPERVISOR_TEST_COMMANDS={GAME_TEST_COMMANDS_JSON}")
-                existing["SUPERVISOR_TEST_COMMANDS"] = GAME_TEST_COMMANDS_JSON
-                changes.append("v2 added Flutter validation commands after detecting pubspec.yaml")
-            else:
-                changes.append("v2 requires a project validation contract; run `supervisor configure`")
+        for addition in migration.get("conditional_add", []):
+            if addition["when"] == "flutter_project" and (project_root / "pubspec.yaml").is_file():
+                key, value = addition["key"], addition["value"]
+                if existing.get(key) is None:
+                    lines.append(f"{key}={value}")
+                    existing[key] = value
+                    changes.append(f"v{version} added {key} after detecting pubspec.yaml")
+            elif addition["when"] == "flutter_project" and addition.get("otherwise"):
+                changes.append(f"v{version} {addition['otherwise']}")
         changes.append(f"v{version} recorded {migration['description']}")
 
     if current_version != ENV_SCHEMA_VERSION:
@@ -567,12 +562,6 @@ def migrate_env(path: Path, *, project_root: Path | None = None) -> list[str]:
         output.write("\n".join(lines) + "\n")
     path.chmod(0o600)
 
-    audit_path = project_root / ".state" / "supervisor-env-migrations.log"
-    audit_path.parent.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now(timezone.utc).isoformat()
-    with audit_path.open("a", encoding="utf-8") as audit:
-        for change in changes:
-            audit.write(f"{timestamp}\t{change}\n")
     return changes
 
 

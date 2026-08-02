@@ -444,15 +444,17 @@ when deliberately sharing state.
 
 `supervisor update` fast-forwards the project-owned `supervisor/` checkout,
 reinstalls its CLI, then runs the newly downloaded version's environment
-migrations. Migrations are numbered and append-only: they add missing safe
-defaults, can carry forward a declared renamed key, never overwrite an existing
-project value, and append an audit record at
-`.state/supervisor-env-migrations.log` without recording secrets.
+migrations. The authoritative, append-only history is committed to the
+Supervisor repository in `supervisor/env_migrations.json`. `supervisor update`
+compares that manifest with `SUPERVISOR_ENV_SCHEMA_VERSION` in the project's
+private `.env`, adds missing safe defaults or declared renamed keys, and never
+overwrites an existing project value.
 
 Use `supervisor env-migrate --config .env` to inspect/apply the same migration
-step manually. Each future configuration change must add a migration entry in
-`supervisor/manage.py`; do not rely on copying `.env.example` over a project
-file.
+step manually. Each future configuration change must add a migration entry to
+`supervisor/env_migrations.json`; do not rely on copying `.env.example` over a
+project file. The test suite enforces that `.env.example` declares the current
+schema version and documents every key introduced by the migration manifest.
 
 The batch starts D008 only after D007 is accepted. This prevents an unfinished
 or unreviewed task from becoming the implicit baseline for later work. For a
