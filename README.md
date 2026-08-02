@@ -523,7 +523,7 @@ Use a dedicated worktree for each task when multiple tasks may run at once.
 Start the read-only Run Ledger dashboard from the supervisor directory:
 
 ```bash
-supervisor-dashboard
+supervisor-dashboard --serve
 ```
 
 Open `http://127.0.0.1:8765` to view accepted/review outcomes, worker load,
@@ -575,7 +575,7 @@ keeps all credentials and telemetry on the local machine.
 Backfill the existing SQLite history after enabling it:
 
 ```bash
-supervisor-observability-import
+supervisor-observability-import --all
 ```
 
 The importer never changes SQLite or the existing files. It sends structured

@@ -78,6 +78,9 @@ given for that task explicitly.""",
         default="summary",
         help="Terminal completion output. Full raw evidence remains in SQLite and live logs.",
     )
+    if len(sys.argv) == 1:
+        parser.print_help()
+        return
     arguments = parser.parse_args()
     load_dotenv()
     package_root = Path(__file__).resolve().parents[1]

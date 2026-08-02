@@ -265,19 +265,25 @@ def main() -> None:
         description="Serve the read-only Supervisor metrics and evidence dashboard on localhost.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""Examples:
-  supervisor-dashboard
+  supervisor-dashboard --serve
       Start on SUPERVISOR_DASHBOARD_PORT (default 8765), or choose a free port.
-  supervisor-dashboard --port 9000
+  supervisor-dashboard --serve --port 9000
       Start on localhost:9000; fail if that explicitly requested port is busy.
-  supervisor-dashboard --no-reload
+  supervisor-dashboard --serve --no-reload
       Disable development-time restart when dashboard source files change.
 
 Run at least one supervisor task first so the local SQLite evidence database
 exists. The dashboard is read-only and listens only on localhost.""",
     )
+    parser.add_argument("--serve", action="store_true", help="Start the localhost dashboard. Running with no arguments shows this help.")
     parser.add_argument("--port", type=int, help="Dashboard port. Defaults to the configured port or the next free localhost port.")
     parser.add_argument("--no-reload", action="store_true", help="Disable automatic restart when dashboard Python files change.")
+    if len(sys.argv) == 1:
+        parser.print_help()
+        return
     arguments = parser.parse_args()
+    if not arguments.serve:
+        parser.error("Pass --serve to start the dashboard; run without arguments to view usage.")
     database = database_path()
     if not database.exists():
         raise SystemExit(f"No supervisor database at {database}; run a task first.")

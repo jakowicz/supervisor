@@ -530,7 +530,7 @@ def configure(path: Path) -> None:
 
     _write_env(path, values)
     print(f"Wrote {path} (mode 600). Secrets were not printed.")
-    print("Next: run `supervisor-run --task-id <ID>` or `supervisor-dashboard`.")
+    print("Next: run `supervisor-run --task-id <ID>` or `supervisor-dashboard --serve`.")
 
 
 def _run(command: list[str], *, cwd: Path | None = None) -> None:
@@ -759,7 +759,7 @@ def main() -> None:
 
 Use `supervisor <command> --help` for that command's options. After setup, use
 supervisor-run to execute runbooks, supervisor-reports to inspect evidence, and
-supervisor-dashboard to view the local dashboard.""",
+supervisor-dashboard --serve to view the local dashboard.""",
     )
     commands = parser.add_subparsers(dest="command", required=True)
     configure_parser = commands.add_parser("configure", help="Interactively create or update an ignored .env configuration file.")
@@ -777,6 +777,9 @@ supervisor-dashboard to view the local dashboard.""",
     init_parser.add_argument("--project-type", choices=tuple(PROJECT_TYPE_DEFAULTS), help="Starter pipeline profile; prompted for during interactive setup.")
     commands.add_parser("update", help="Fast-forward the current project's supervisor/ checkout from origin/main and reinstall its CLI tools.")
     commands.add_parser("upgrade", help="Fast-forward the checkout that provides this Supervisor CLI and reinstall its commands.")
+    if len(sys.argv) == 1:
+        parser.print_help()
+        return
     arguments = parser.parse_args()
     if arguments.command == "configure":
         configure(arguments.config.expanduser().resolve())

@@ -272,6 +272,9 @@ Reports are read-only. Run supervisor-run to execute or retry work.""",
     export_parser = subparsers.add_parser("export", help="Export a complete run JSON document.")
     export_parser.add_argument("run_id")
     export_parser.add_argument("--output", help="Write JSON to this file instead of stdout.")
+    if len(sys.argv) == 1:
+        parser.print_help()
+        return
     arguments = parser.parse_args()
     try:
         connection = open_database(database_path())

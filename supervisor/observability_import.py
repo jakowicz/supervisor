@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import os
 import sqlite3
+import sys
 import uuid
 from contextlib import ExitStack
 from datetime import datetime
@@ -41,7 +42,7 @@ def main() -> None:
         description="Backfill local SQLite Supervisor history into configured Langfuse observability.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""Examples:
-  supervisor-observability-import
+  supervisor-observability-import --all
       Import all stored local runs into the configured Langfuse project.
   supervisor-observability-import --task R0007
       Import only one task's history.
@@ -53,10 +54,16 @@ def main() -> None:
 Set SUPERVISOR_OBSERVABILITY_ENABLED=true and the Langfuse configuration first.
 This command reads SQLite history; it does not execute or alter task work.""",
     )
+    parser.add_argument("--all", action="store_true", help="Import all runs from the selected database. Running with no arguments shows this help.")
     parser.add_argument("--database", type=Path, help="Override SUPERVISOR_DATABASE_PATH.")
     parser.add_argument("--task", help="Only import one task ID.")
     parser.add_argument("--limit", type=int, help="Import at most this many newest runs.")
+    if len(sys.argv) == 1:
+        parser.print_help()
+        return
     arguments = parser.parse_args()
+    if not arguments.all and not arguments.task:
+        parser.error("Pass --all to import all runs, or --task to import one task. Run without arguments for usage.")
     load_dotenv()
     package_root = Path(__file__).resolve().parents[1]
     database = arguments.database or Path(os.getenv("SUPERVISOR_DATABASE_PATH", ".state/supervisor.sqlite3"))
