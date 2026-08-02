@@ -10,6 +10,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import termios
+import tty
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
@@ -138,6 +140,47 @@ TARGET_SYSTEMS = (
     "Data import, export, or migration tool",
 )
 DEFAULT_WEB_TARGETS = ("Responsive public web application", "Progressive web app (PWA)")
+APPLICATION_TARGET_FAMILIES = (
+    (
+        "Connected application and companion apps",
+        (
+            "Android phone",
+            "Android tablet / ChromeOS",
+            "iPhone (iOS)",
+            "iPad (iPadOS)",
+            "Wear OS",
+            "watchOS",
+            "Desktop web application",
+            "Browser extension",
+            "macOS",
+            "Windows",
+            "Linux",
+        ),
+    ),
+    ("Living-room TV application", ("Apple TV / tvOS", "Android TV / Google TV", "Amazon Fire TV", "Samsung Smart TV / Tizen", "LG Smart TV / webOS", "Roku", "Hisense / VIDAA")),
+    ("Spatial application", ("Meta Quest / virtual reality", "Augmented or mixed reality")),
+    ("Dedicated device or embedded application", ("Embedded web / WebView surface", "Kiosk, point-of-sale, or dedicated hardware", "Automotive display / Android Automotive / CarPlay", "Voice assistant or conversational interface")),
+    ("Service and integration product", ("Backend API", "Background workers / scheduled jobs", "Admin or operations portal", "Third-party partner API / SDK", "Data import, export, or migration tool")),
+)
+GAME_TARGET_FAMILIES = (
+    (
+        "Cross-platform game (web, mobile, and desktop)",
+        (
+            "Android phone",
+            "Android tablet / ChromeOS",
+            "iPhone (iOS)",
+            "iPad (iPadOS)",
+            "Desktop web application",
+            "macOS",
+            "Windows",
+            "Linux",
+            "PC game storefronts",
+        ),
+    ),
+    ("Living-room TV game", ("Apple TV / tvOS", "Android TV / Google TV", "Amazon Fire TV", "Samsung Smart TV / Tizen", "LG Smart TV / webOS", "Roku", "Hisense / VIDAA")),
+    ("Console game", ("PlayStation", "Xbox", "Nintendo Switch", "PC game storefronts")),
+    ("Spatial game", ("Meta Quest / virtual reality", "Augmented or mixed reality")),
+)
 
 RUNBOOK_TEMPLATE = """---
 task_id: T001
@@ -223,8 +266,12 @@ def _choose_one(label: str, options: tuple[str, ...]) -> str:
         print("Enter one of the listed numbers.")
 
 
-def _choose_many(label: str, options: tuple[str, ...]) -> list[str]:
-    print(f"\n{label} (comma-separated numbers; blank for no additional targets):")
+def _choose_many_fallback(label: str, options: tuple[str, ...]) -> list[str]:
+    """Non-interactive fallback for piped input and terminals without raw mode."""
+
+    print(f"\n{label}:")
+    print("Enter one or more numbers separated by commas (for example: 1, 4, 12).")
+    print("Press Enter when no additional targets are needed.")
     for number, option in enumerate(options, start=1):
         print(f"  {number}. {option}")
     while True:
@@ -238,6 +285,78 @@ def _choose_many(label: str, options: tuple[str, ...]) -> list[str]:
         if selected and all(1 <= item <= len(options) for item in selected):
             return [options[item - 1] for item in dict.fromkeys(selected)]
         print("Enter valid comma-separated numbers, or leave blank.")
+
+
+def _choose_many(label: str, options: tuple[str, ...]) -> list[str]:
+    """Choose one or more options with a keyboard checkbox selector.
+
+    Raw terminal mode gives the normal interactive experience. The numeric
+    fallback keeps the wizard usable from a redirected terminal and test runner.
+    """
+
+    if not sys.stdin.isatty() or not sys.stdout.isatty():
+        return _choose_many_fallback(label, options)
+
+    selected: set[int] = set()
+    current = 0
+    line_count = len(options) + 3
+
+    def render(*, replace: bool) -> None:
+        if replace:
+            sys.stdout.write(f"\x1b[{line_count}F\x1b[J")
+        lines = [f"\n{label}", "Use ↑/↓ to move, Space to select, and Enter to confirm."]
+        lines.extend(
+            f"{'›' if index == current else ' '} [{'x' if index in selected else ' '}] {option}"
+            for index, option in enumerate(options)
+        )
+        sys.stdout.write("\n".join(lines) + "\n")
+        sys.stdout.flush()
+
+    stream = sys.stdin
+    try:
+        file_descriptor = stream.fileno()
+    except (AttributeError, OSError):
+        return _choose_many_fallback(label, options)
+
+    original_settings = termios.tcgetattr(file_descriptor)
+    try:
+        tty.setraw(file_descriptor)
+        sys.stdout.write("\x1b[?25l")
+        render(replace=False)
+        while True:
+            key = stream.read(1)
+            if key in {"\r", "\n"}:
+                return [option for index, option in enumerate(options) if index in selected]
+            if key == " ":
+                if current in selected:
+                    selected.remove(current)
+                else:
+                    selected.add(current)
+                render(replace=True)
+                continue
+            if key == "\x1b":
+                sequence = stream.read(2)
+                if sequence == "[A":
+                    current = (current - 1) % len(options)
+                elif sequence == "[B":
+                    current = (current + 1) % len(options)
+                else:
+                    continue
+                render(replace=True)
+    finally:
+        termios.tcsetattr(file_descriptor, termios.TCSADRAIN, original_settings)
+        sys.stdout.write("\x1b[?25h")
+        sys.stdout.flush()
+
+
+def _choose_target_family(category: str) -> tuple[str, tuple[str, ...]]:
+    families = GAME_TARGET_FAMILIES if category == "Game" else APPLICATION_TARGET_FAMILIES
+    labels = tuple(name for name, _targets in families)
+    selected_name = _choose_one(
+        "Choose one compatible delivery profile (targets from different profiles need separate runbook collections)",
+        labels,
+    )
+    return next(family for family in families if family[0] == selected_name)
 
 
 def _render_initial_brief(values: dict[str, str], targets: list[str], target_details: dict[str, str]) -> str:
@@ -274,7 +393,11 @@ inventing requirements.
 ## Target systems and delivery surfaces
 
 Responsive public web application and Progressive web app (PWA) are included by
-default. Additional selected targets:
+default. The selected compatible delivery profile is:
+
+- [x] {values.get('target_family', 'Not recorded')}
+
+Additional selected targets:
 
 {target_lines}
 
@@ -312,7 +435,8 @@ def create_initial_brief(path: Path, *, force: bool = False) -> Path:
     if path.exists() and not force:
         raise ValueError(f"Initial brief already exists: {path}. Use --force to replace it.")
     category = _choose_one("What type of product are you building", PRODUCT_CATEGORIES)
-    additional_targets = _choose_many("Select any additional target systems", TARGET_SYSTEMS)
+    target_family, compatible_targets = _choose_target_family(category)
+    additional_targets = _choose_many("Select every target in this compatible profile that you want to support", compatible_targets)
     targets = [*DEFAULT_WEB_TARGETS, *additional_targets]
     target_details = {
         target: _required(f"Requirements for {target} (input, screens, offline, performance, release constraints)")
@@ -321,6 +445,7 @@ def create_initial_brief(path: Path, *, force: bool = False) -> Path:
     values = {
         "product": _required("Describe what you are creating"),
         "category": category,
+        "target_family": target_family,
         "users": _required("Who is it for"),
         "primary_outcome": _required("What is their primary outcome"),
         "first_session": _required("What makes the first useful session successful"),

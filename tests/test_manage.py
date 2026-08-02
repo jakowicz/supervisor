@@ -51,6 +51,24 @@ def test_initial_brief_renderer_always_includes_responsive_web_and_pwa():
     assert "### iPhone (iOS)" in rendered
 
 
+def test_choose_many_fallback_accepts_multiple_target_systems(monkeypatch):
+    answers = iter(["1, 3, 2, 3"])
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
+
+    selected = manage._choose_many_fallback("Select target systems", ("Android", "iPhone", "Windows"))
+
+    assert selected == ["Android", "Windows", "iPhone"]
+
+
+def test_game_target_family_only_offers_compatible_game_targets(monkeypatch):
+    monkeypatch.setattr(manage, "_choose_one", lambda _label, options: options[2])
+
+    family, targets = manage._choose_target_family("Game")
+
+    assert family == "Console game"
+    assert targets == ("PlayStation", "Xbox", "Nintendo Switch", "PC game storefronts")
+
+
 def test_initialise_project_scaffolds_a_safe_empty_project(monkeypatch, tmp_path: Path):
     commands: list[tuple[list[str], Path | None]] = []
 
