@@ -140,6 +140,10 @@ def test_player_experience_options_are_mutually_exclusive():
     assert manage.GAME_PLAYER_EXPERIENCE == ("Casual players", "Core/hobby players")
 
 
+def test_audience_group_options_are_mutually_exclusive():
+    assert manage.GAME_AUDIENCE_GROUPS == ("Children and families", "Teen players", "Adult players", "Accessibility-first players")
+
+
 def test_game_first_release_capabilities_are_baseline_requirements():
     capabilities = "\n".join(f"- {capability}" for capability in manage.GAME_FIRST_RELEASE_CAPABILITIES)
 
