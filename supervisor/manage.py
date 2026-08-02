@@ -798,10 +798,16 @@ def _record_initial_audio_direction(workspace: Path, brief: str) -> str:
     """Configure an independent original music/SFX direction for a game."""
 
     config = workspace / ".env"
+    factory_commands = {
+        # Generated factory projects run from the repository holding the
+        # `supervisor/` checkout, not from the project workspace itself.
+        "AUDIO_GENERATOR_COMMAND": "./supervisor/.venv/bin/python supervisor/scripts/ace_audio_generator.py {task_file}",
+        "AUDIO_QA_COMMAND": "./supervisor/.venv/bin/python supervisor/scripts/audio_qa_worker.py {task_file}",
+    }
     if brief:
-        _set_env_values(config, {"AUDIO_DIRECTION_MODE": "user_provided", "AUDIO_DIRECTION_MODEL": "gemma4:12b", "AUDIO_DIRECTION_BRIEF": brief, "AUDIO_STYLE_NAME": "user-directed original product audio", "AUDIO_STYLE_PROMPT": f"{brief}, original instrumental product music, no vocals, no recognisable melody"})
+        _set_env_values(config, {**factory_commands, "AUDIO_DIRECTION_MODE": "user_provided", "AUDIO_DIRECTION_MODEL": "gemma4:12b", "AUDIO_DIRECTION_BRIEF": brief, "AUDIO_STYLE_NAME": "user-directed original product audio", "AUDIO_STYLE_PROMPT": f"{brief}, original instrumental product music, no vocals, no recognisable melody"})
         return f"- User direction: {brief}\n- ACE-Step 1.5 XL Turbo will use this project audio direction."
-    _set_env_values(config, {"AUDIO_DIRECTION_MODE": "gemma4_auto", "AUDIO_DIRECTION_MODEL": "gemma4:12b", "AUDIO_DIRECTION_BRIEF": ""})
+    _set_env_values(config, {**factory_commands, "AUDIO_DIRECTION_MODE": "gemma4_auto", "AUDIO_DIRECTION_MODEL": "gemma4:12b", "AUDIO_DIRECTION_BRIEF": ""})
     return "- No custom direction supplied. Gemma 4 12B will create an original music and sound direction for audio work; ACE-Step 1.5 XL Turbo will generate the selected cues locally."
 
 
