@@ -207,6 +207,51 @@ def test_dependency_gate_waits_for_unaccepted_r_series_prerequisites(monkeypatch
     assert _unmet_dependencies([r1, r2], {"R0001": None, "R0002": None}) == {"R0002": ["R0001"]}
 
 
+def test_collection_rediscovers_a_later_generated_g_wave(monkeypatch, tmp_path: Path):
+    collection = tmp_path / "game-design-runbooks"
+    collection.mkdir()
+    template = "---\ntask_id: {task_id}\nsequence: {sequence}\ntitle: Design\nbrowser_impact: not_applicable\nplaywright_spec:\n---\n\n## Objective\n\nDesign.\n\n## Acceptance criteria\n\n- Done.\n"
+    (collection / "G0001.md").write_text(template.format(task_id="G0001", sequence=1), encoding="utf-8")
+    database = tmp_path / ".state" / "game-design-runbooks.sqlite3"
+    calls = []
+
+    def run_batch(runbooks, *_args):
+        calls.append([path.stem for path in runbooks])
+        if calls == [["G0001"]]:
+            (collection / "G0002.md").write_text(template.format(task_id="G0002", sequence=2), encoding="utf-8")
+        store = RunStore(database)
+        for path in runbooks:
+            store.claim_task(path.stem, f"{path.stem}-run", 0)
+            store.finish_task(TaskRun(task=Task(task_id=path.stem, title="Design"), run_id=f"{path.stem}-run", status=Status.PASS, route="accepted", worker_results=[]))
+        store.close()
+        return True
+
+    monkeypatch.setattr(cli, "_run_task_range", run_batch)
+
+    assert _run_collection_until_complete(collection, False, False, database, "# Brief") is True
+    assert calls == [["G0001"], ["G0002"]]
+
+
+def test_game_design_completion_gate_requires_accepted_final_audit(tmp_path: Path):
+    workspace = tmp_path / "project"
+    planning = workspace / "planning"
+    planning.mkdir(parents=True)
+    (planning / "game-design-manifest.json").write_text(
+        '{"status":"accepted","final_audit":{"task_id":"G0099","status":"accepted"},'
+        '"modules":[{"module":"trivia","status":"accepted","design_output_paths":["specification/trivia.md"]}],'
+        '"pending_modules":[],"blocked_modules":[]}',
+        encoding="utf-8",
+    )
+    database = workspace / ".state" / "game-design-runbooks.sqlite3"
+    assert cli._game_design_completion_error(workspace, database) == "G final audit G0099 is not accepted in durable state"
+
+    store = RunStore(database)
+    store.claim_task("G0099", "audit-run", 0)
+    store.finish_task(TaskRun(task=Task(task_id="G0099", title="Audit"), run_id="audit-run", status=Status.PASS, route="accepted", worker_results=[]))
+    store.close()
+    assert cli._game_design_completion_error(workspace, database) is None
+
+
 def test_invalid_accepted_authoring_task_is_reopened(tmp_path: Path):
     workspace = tmp_path / "project"
     authoring = workspace / "authoring-runbooks"
