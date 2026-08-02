@@ -126,8 +126,23 @@ given for that task explicitly.""",
         # the factory default so it can deliberately override generic values.
         project_root = load_project_environment(package_root, env_file=project_workspace / ".env", override=True)
         repo_root = project_path(os.getenv("SUPERVISOR_REPO_ROOT", "../.."), project_root)
-        database_path = project_path(os.getenv("SUPERVISOR_DATABASE_PATH", ".state/supervisor.sqlite3"), project_root)
-        if not any((arguments.task_range, arguments.run_all, arguments.run_initial)):
+        # Every invocation that names a generated project must use its durable
+        # factory state, including a targeted recovery such as
+        # `--project name --task-id F001 --start-on test`.
+        database_path = project_workspace / ".state" / "factory.sqlite3"
+        if not any((
+            arguments.task_range,
+            arguments.run_all,
+            arguments.run_initial,
+            arguments.task_id,
+            arguments.runbook,
+            arguments.title,
+            arguments.objective,
+            arguments.acceptance,
+            arguments.start_on,
+            arguments.retry,
+            arguments.verify,
+        )):
             arguments.run_all = True
     batch_modes = sum(bool(value) for value in (arguments.task_range, arguments.run_all, arguments.run_initial))
     if batch_modes:

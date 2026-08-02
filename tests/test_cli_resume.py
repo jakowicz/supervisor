@@ -226,6 +226,27 @@ def test_project_option_runs_the_factory_with_isolated_state(monkeypatch, tmp_pa
     assert calls[1][3] == workspace
 
 
+def test_project_option_allows_a_targeted_recovery_stage(monkeypatch, tmp_path: Path):
+    workspace = tmp_path / "projects" / "task-app"
+    workspace.mkdir(parents=True)
+    (workspace / "INITIAL.md").write_text("# Brief\n", encoding="utf-8")
+    (workspace / ".env").write_text("SUPERVISOR_REPO_ROOT=../..\n", encoding="utf-8")
+    factory = tmp_path / "runbooks"
+    factory.mkdir()
+    (factory / "F001.md").write_text(
+        "---\ntask_id: F001\nsequence: 1\ntitle: Factory\nbrowser_impact: not_applicable\nplaywright_spec:\n---\n\n## Objective\n\nDo it.\n\n## Acceptance criteria\n\n- Done.\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("SUPERVISOR_OBSERVABILITY_ENABLED", "false")
+    monkeypatch.setattr(sys, "argv", ["supervisor-run", "--project", "task-app", "--task-id", "F001", "--start-on", "test", "--dry-run"])
+
+    cli.main()
+
+    state = RunStore(workspace / ".state" / "factory.sqlite3").state_for("F001")
+    assert state["status"] == "validating"
+
+
 def test_interrupted_project_factory_resumes_the_first_unaccepted_task(monkeypatch, tmp_path: Path):
     factory = tmp_path / "runbooks"
     factory.mkdir()
