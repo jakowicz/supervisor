@@ -18,7 +18,14 @@ _LIMIT_ENVIRONMENT_KEYS = {
     "codex_final": "SUPERVISOR_CODEX_FINAL_ATTEMPTS",
 }
 _IMPLEMENTATION_AGENTS = ("qwen", "openhands", "codex")
-_ALL_STAGES = ("qwen", "openhands", "codex", "precheck", "codex_final", "test", "browser", "visual_review", "completion_audit", "git_publish")
+_ART_STAGES = ("art_director", "asset_generator", "asset_finisher", "asset_qa")
+_ALL_STAGES = (*_ART_STAGES, "qwen", "openhands", "codex", "precheck", "codex_final", "test", "browser", "visual_review", "completion_audit", "git_publish")
+
+
+def asset_pipeline_required(task) -> bool:
+    """True only for runbooks which explicitly request generated visual assets."""
+
+    return bool(task and task.asset_impact.strip().lower() == "required")
 
 
 def implementation_agents() -> tuple[str, ...]:
@@ -57,7 +64,9 @@ def configured_stage_order() -> tuple[str, ...]:
     return stages if stages == required else ()
 
 
-def first_stage() -> str:
+def first_stage(task=None) -> str:
+    if asset_pipeline_required(task):
+        return "art_director"
     return configured_stage_order()[0] if configured_stage_order() else primary_agent()
 
 
@@ -101,13 +110,20 @@ def next_agent(current_agent: str, attempts: dict[str, int]) -> str:
     return "user_review"
 
 
-def next_route(stage: str, result: WorkerResult, active_agent: str, attempts: dict[str, int]) -> str:
+def next_route(stage: str, result: WorkerResult, active_agent: str, attempts: dict[str, int], task=None) -> str:
     """Return a graph node name from evidence and bounded retry counts."""
 
     if result.status is Status.PASS:
-        if configured_stage_order():
+        # Art stages always use the bounded, evidence-gated art lane.  A
+        # legacy configured code pipeline must never make an art stage jump
+        # directly to acceptance.
+        if configured_stage_order() and stage not in _ART_STAGES:
             return next_configured_stage(stage)
         routes = {
+            "art_director": "asset_generator",
+            "asset_generator": "asset_finisher",
+            "asset_finisher": "asset_qa",
+            "asset_qa": primary_agent(),
             # A successful primary/fallback implementation is always examined
             # and, where necessary, repaired by Codex before acceptance.  A
             # deterministic precheck comes first: do not spend the final
@@ -127,6 +143,11 @@ def next_route(stage: str, result: WorkerResult, active_agent: str, attempts: di
         }
         return routes[stage]
     if result.status is Status.NEEDS_USER_REVIEW:
+        return "user_review"
+    # Asset creation has no coding-agent fallback: blindly changing a visual
+    # brief or regenerating art after a provenance/technical rejection would
+    # hide the reason an asset was rejected. Preserve evidence and stop.
+    if stage in _ART_STAGES:
         return "user_review"
     # Validation infrastructure is not a coding-agent defect. Preserve evidence
     # and ask for repair/configuration rather than burning expensive retries.

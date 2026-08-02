@@ -77,6 +77,12 @@ class Task(BaseModel):
     sequence: int = 0
     browser_impact: str = "not_applicable"
     playwright_specs: list[str] = Field(default_factory=list)
+    # Asset stages are opt-in.  Most engineering runbooks deliberately leave
+    # these at their safe defaults and never contact a local image generator.
+    asset_impact: str = "not_applicable"
+    asset_brief: str = ""
+    asset_ids: list[str] = Field(default_factory=list)
+    visual_style_version: str = ""
     # The graph sets this only for the independent Codex final-review stage.
     # Runbooks always remain implementation contracts and need not declare it.
     execution_mode: str = "implementation"

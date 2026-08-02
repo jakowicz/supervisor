@@ -505,6 +505,29 @@ Bundled adapters and common stages such as `codex`, `test`, `browser`,
 configured; they are not a universal required pipeline. Use the `.env` for the
 actual project contract and `supervisor configure` to edit it interactively.
 
+### Optional local asset lane
+
+Runbooks can explicitly opt into a local original-art lane without changing
+the normal code pipeline. A task with `asset_impact: required` runs an
+art-director brief, local ComfyUI generator, deterministic asset finisher and
+provenance/technical asset QA before the first coding agent. It then continues
+through the usual Codex verification, deterministic tests, Playwright, visual
+evidence, completion audit and Git publisher.
+
+```yaml
+asset_impact: required
+asset_brief: docs/art/briefs/my-asset.md
+asset_ids: village_gate_001,village_gate_001_construction
+visual_style_version: emberhold-v1
+```
+
+Configure the lane with the three worker commands and a local ComfyUI URL in
+`.env`; `.env.example` supplies defaults for the included Z-Image Turbo worker.
+It is deliberately opt-in: a persistence or combat task never starts image
+generation. The selected asset, workflow JSON, prompt, seed and hashes are
+stored under `assets/generated/<asset-id>/`; candidates are local ignored
+files, while `selected.png` is the commit-ready production source.
+
 When `SUPERVISOR_AUTO_COMMIT=false`, the Git publisher records that no commit
 was created but still accepts a task once all implementation and QA gates pass.
 This lets local and mock task ranges continue without granting the supervisor

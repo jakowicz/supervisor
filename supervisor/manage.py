@@ -57,6 +57,11 @@ DEFAULTS = {
     "CODEX_COMMAND": "./.venv/bin/python scripts/codex_worker.py {task_file}",
     "BROWSER_QA_COMMAND": "./.venv/bin/python scripts/browser_worker.py {task_file}",
     "VISUAL_REVIEW_COMMAND": "./.venv/bin/python scripts/visual_review_worker.py {task_file}",
+    "COMFYUI_BASE_URL": "http://127.0.0.1:8188",
+    "COMFYUI_GENERATION_TIMEOUT_SECONDS": "600",
+    "ASSET_GENERATOR_COMMAND": "./.venv/bin/python scripts/comfy_asset_generator.py {task_file}",
+    "ASSET_FINISHER_COMMAND": "./.venv/bin/python scripts/asset_finisher.py {task_file}",
+    "ASSET_QA_COMMAND": "./.venv/bin/python scripts/asset_qa_worker.py {task_file}",
 }
 
 DEFAULT_SUPERVISOR_URL = "git@github.com:jakowicz/supervisor.git"

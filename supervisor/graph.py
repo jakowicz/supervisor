@@ -16,7 +16,7 @@ from .completion_audit import audit
 from .git_publish import preflight, publish
 from .routing import first_stage, next_route
 from .state import SupervisorState
-from .workers import browser, codex, coder, openhands, tester, visual_review
+from .workers import art_director, asset_finisher, asset_generator, asset_qa, browser, codex, coder, openhands, tester, visual_review
 from .observability import SupervisorTelemetry
 
 
@@ -130,7 +130,7 @@ def create_graph(config: SupervisorConfig):
             # Only coding attempts consume the Qwen/OpenHands/Codex retry budget.
             if stage in {"qwen", "openhands", "codex", "codex_final"}:
                 attempts[stage] = attempts.get(stage, 0) + 1
-            route = next_route(stage, result, state.get("active_agent", agent), attempts)
+            route = next_route(stage, result, state.get("active_agent", agent), attempts, task)
             if telemetry:
                 telemetry.complete_stage(stage_span, result, route)
             if stage_context:
@@ -169,7 +169,7 @@ def create_graph(config: SupervisorConfig):
         context = config.telemetry.stage(state["task"], state.get("run_id", ""), "prepare", "Git baseline guard", "git", 0) if config.telemetry else None
         with (context or nullcontext(None)) as span:
             result = preflight(state["task"], config.repo_root)
-            route = first_stage() if result.status is Status.PASS else "user_review"
+            route = first_stage(state["task"]) if result.status is Status.PASS else "user_review"
             if config.telemetry:
                 config.telemetry.complete_stage(span, result, route)
         event = RunEvent(stage="prepare", agent="Git baseline guard", model="git", attempt=0, status=result.status, summary=result.summary, route=route, result=result)
@@ -183,11 +183,15 @@ def create_graph(config: SupervisorConfig):
             "worker_results": [*state.get("worker_results", []), result],
             "events": [*state.get("events", []), event],
             "route": route,
-            "active_agent": first_stage(),
+            "active_agent": first_stage(state["task"]),
             "notes": [*state.get("notes", []), f"prepare: {result.summary}"],
         }
 
     builder.add_node("prepare", prepare_node)
+    builder.add_node("art_director", worker_node("art_director", "Emberhold art director", "structured local brief", lambda task: art_director.run(task, config.repo_root)))
+    builder.add_node("asset_generator", worker_node("asset_generator", "ComfyUI Z-Image Turbo", "local ComfyUI", lambda task: asset_generator.run(task, config.repo_root)))
+    builder.add_node("asset_finisher", worker_node("asset_finisher", "asset finisher", "deterministic local processing", lambda task: asset_finisher.run(task, config.repo_root)))
+    builder.add_node("asset_qa", worker_node("asset_qa", "asset QA reviewer", "local technical and provenance checks", lambda task: asset_qa.run(task, config.repo_root)))
     builder.add_node("qwen", worker_node("qwen", "Qwen3 Coder", "QWEN_MODEL or CLI default", _dry_run_coder if config.dry_run else coder.run))
     builder.add_node("openhands", worker_node("openhands", "OpenHands", "OPENHANDS configured model", openhands.run))
     builder.add_node("codex", worker_node("codex", "Codex", "CODEX_MODEL or CLI default", codex.run))
@@ -204,7 +208,7 @@ def create_graph(config: SupervisorConfig):
         context = config.telemetry.stage(state["task"], state.get("run_id", ""), "git_publish", "Git publisher", "git", 0) if config.telemetry else None
         with (context or nullcontext(None)) as span:
             result = publish(state["task"], config.repo_root)
-            route = next_route("git_publish", result, state.get("active_agent", "qwen"), state.get("attempts", {}))
+            route = next_route("git_publish", result, state.get("active_agent", "qwen"), state.get("attempts", {}), state["task"])
             if config.telemetry:
                 config.telemetry.complete_stage(span, result, route)
         event = RunEvent(stage="git_publish", agent="Git publisher", model="git", attempt=0, status=result.status, summary=result.summary, route=route, result=result)
@@ -232,7 +236,7 @@ def create_graph(config: SupervisorConfig):
         context = config.telemetry.stage(state["task"], state.get("run_id", ""), "completion_audit", "completion-contract auditor", "deterministic policy", attempts.get(state.get("active_agent", "qwen"), 0)) if config.telemetry else None
         with (context or nullcontext(None)) as span:
             result = audit(state["task"], state.get("events", []))
-            route = next_route("completion_audit", result, state.get("active_agent", "qwen"), attempts)
+            route = next_route("completion_audit", result, state.get("active_agent", "qwen"), attempts, state["task"])
             if config.telemetry:
                 config.telemetry.complete_stage(span, result, route)
         event = RunEvent(stage="completion_audit", agent="completion-contract auditor", model="deterministic policy", attempt=attempts.get(state.get("active_agent", "qwen"), 0), status=result.status, summary=result.summary, route=route, result=result)
@@ -245,7 +249,7 @@ def create_graph(config: SupervisorConfig):
         return {"worker_results": [*state.get("worker_results", []), result], "events": [*state.get("events", []), event], "route": route, "notes": [*state.get("notes", []), f"completion audit: {result.status.value}: {result.summary}"]}
 
     builder.add_node("completion_audit", audit_node)
-    for stage in ("qwen", "openhands", "codex", "codex_final", "precheck", "test", "browser", "visual_review", "completion_audit", "git_publish"):
+    for stage in ("art_director", "asset_generator", "asset_finisher", "asset_qa", "qwen", "openhands", "codex", "codex_final", "precheck", "test", "browser", "visual_review", "completion_audit", "git_publish"):
         builder.add_conditional_edges(stage, lambda state: state["route"])
     builder.add_edge("accept", END)
     builder.add_edge("user_review", END)

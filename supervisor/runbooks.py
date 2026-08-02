@@ -55,4 +55,8 @@ def load_task(path: Path) -> Task:
         playwright_specs=[metadata["playwright_spec"]] if metadata["playwright_spec"] else [],
         objective=_section(document, "Objective"),
         acceptance_criteria=criteria,
+        asset_impact=metadata.get("asset_impact", "not_applicable"),
+        asset_brief=metadata.get("asset_brief", ""),
+        asset_ids=[asset_id.strip() for asset_id in metadata.get("asset_ids", "").split(",") if asset_id.strip()],
+        visual_style_version=metadata.get("visual_style_version", ""),
     )

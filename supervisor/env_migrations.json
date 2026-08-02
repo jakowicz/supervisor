@@ -1,5 +1,5 @@
 {
-  "schema_version": 2,
+  "schema_version": 3,
   "migrations": [
     {
       "version": 1,
@@ -25,6 +25,18 @@
           "otherwise": "requires a project validation contract; run `supervisor configure`"
         }
       ]
+    },
+    {
+      "version": 3,
+      "description": "add opt-in local ComfyUI asset-generation workers",
+      "add": {
+        "COMFYUI_BASE_URL": "http://127.0.0.1:8188",
+        "COMFYUI_GENERATION_TIMEOUT_SECONDS": "600",
+        "ASSET_GENERATOR_COMMAND": "./.venv/bin/python scripts/comfy_asset_generator.py {task_file}",
+        "ASSET_FINISHER_COMMAND": "./.venv/bin/python scripts/asset_finisher.py {task_file}",
+        "ASSET_QA_COMMAND": "./.venv/bin/python scripts/asset_qa_worker.py {task_file}"
+      },
+      "rename": {}
     }
   ]
 }
