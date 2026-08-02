@@ -410,84 +410,15 @@ def _choose_many(label: str, options: tuple[str, ...]) -> list[str]:
         sys.stdout.flush()
 
 
-def _choose_grouped_many(label: str, groups: tuple[tuple[str, tuple[str, ...]], ...]) -> list[str]:
-    """Checkbox selector with visible, non-selectable group headings."""
-
-    options = tuple(dict.fromkeys(target for _heading, targets in groups for target in targets))
-    if not sys.stdin.isatty() or not sys.stdout.isatty():
-        return _choose_many_fallback(label, options)
-    rows = [item for heading, targets in groups for item in ((heading, None), *((target, target) for target in targets))]
-    selectable = [index for index, (_text, value) in enumerate(rows) if value]
-    selected: set[int] = set()
-    current = selectable[0]
-    line_count = len(rows) + 3
-
-    def move(direction: int) -> None:
-        nonlocal current
-        position = selectable.index(current)
-        current = selectable[(position + direction) % len(selectable)]
-
-    def render(*, replace: bool) -> None:
-        if replace:
-            sys.stdout.write(f"\x1b[{line_count}F\x1b[J")
-        lines = [f"\n{label}", "Use ↑/↓ to move, Space to select, and Enter to confirm."]
-        for index, (text, value) in enumerate(rows):
-            if value is None:
-                lines.append(f"{text}:")
-            else:
-                lines.append(f"{'›' if index == current else ' '} [{'x' if index in selected else ' '}] {text}")
-        sys.stdout.write("\r\n".join(lines) + "\r\n")
-        sys.stdout.flush()
-
-    stream = sys.stdin
-    try:
-        file_descriptor = stream.fileno()
-    except (AttributeError, OSError):
-        return _choose_many_fallback(label, options)
-    original_settings = termios.tcgetattr(file_descriptor)
-    try:
-        tty.setraw(file_descriptor)
-        sys.stdout.write("\x1b[?25l")
-        render(replace=False)
-        while True:
-            key = stream.read(1)
-            if key in {"\r", "\n"}:
-                return [value for index, (_text, value) in enumerate(rows) if value and index in selected]
-            if key == " ":
-                if current in selected:
-                    selected.remove(current)
-                else:
-                    selected.add(current)
-                render(replace=True)
-                continue
-            if key == "\x1b":
-                sequence = stream.read(2)
-                if sequence == "[A":
-                    move(-1)
-                elif sequence == "[B":
-                    move(1)
-                else:
-                    continue
-                render(replace=True)
-    finally:
-        termios.tcsetattr(file_descriptor, termios.TCSADRAIN, original_settings)
-        sys.stdout.write("\x1b[?25h")
-        sys.stdout.flush()
-
-
 def _choose_compatible_targets(category: str) -> tuple[str, list[str]]:
-    """Select actual targets once, rejecting combinations needing separate collections."""
+    """Choose a delivery category, then select platforms inside that category."""
 
     families = GAME_TARGET_FAMILIES if category == "Game" else APPLICATION_TARGET_FAMILIES
-    while True:
-        selected = _choose_grouped_many("Select every additional target you want to support", families)
-        matching_families = [name for name, targets in families if set(selected).issubset(set(targets))]
-        if matching_families:
-            return matching_families[0], selected
-        print(
-            "That target combination needs separate runbook collections (for example, a console game and a TV app). "
-            "Select targets from one compatible delivery family."
-        )
+    family_names = tuple(name for name, _targets in families)
+    selected_family = _choose_one("Choose the delivery category", family_names)
+    _name, targets = next(family for family in families if family[0] == selected_family)
+    selected = _choose_many(f"Select every target for {selected_family}", targets)
+    return selected_family, selected
 
 
 def _game_target_requirement_options(target: str, characteristics: list[str]) -> tuple[str, ...]:

@@ -87,7 +87,8 @@ def test_choose_many_fallback_accepts_multiple_target_systems(monkeypatch):
 
 
 def test_target_selector_infers_a_compatible_game_family(monkeypatch):
-    monkeypatch.setattr(manage, "_choose_grouped_many", lambda *_args: ["PlayStation", "Xbox"])
+    monkeypatch.setattr(manage, "_choose_one", lambda *_args: "Console game")
+    monkeypatch.setattr(manage, "_choose_many", lambda *_args: ["PlayStation", "Xbox"])
 
     family, targets = manage._choose_compatible_targets("Game")
 
