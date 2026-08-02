@@ -573,7 +573,7 @@ def create_initial_brief(path: Path, *, project_name: str, force: bool = False) 
         }
     )
     if category == "Game":
-        player_experience = _selected_bullets("Select the intended player experience", GAME_PLAYER_EXPERIENCE)
+        player_experience = f"- {_choose_one_with_example('Choose the intended player experience', GAME_PLAYER_EXPERIENCE, example='Casual players.')}"
         audience_groups = _selected_bullets("Select the intended audience groups", GAME_AUDIENCE_GROUPS)
         users = "\n".join((player_experience, audience_groups))
         primary_outcome = _choose_one_with_example("Select the primary player outcome", GAME_PRIMARY_OUTCOMES, example="Progress through a story or campaign.")
