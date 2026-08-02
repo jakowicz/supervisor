@@ -579,7 +579,7 @@ def create_initial_brief(path: Path, *, project_name: str, force: bool = False) 
         primary_outcome = _choose_one_with_example("Select the primary player outcome", GAME_PRIMARY_OUTCOMES, example="Progress through a story or campaign.")
         first_session = _choose_one_with_example("Select a successful first session", GAME_FIRST_SESSION_SUCCESSES, example="Finish a first battle and understand how saving works.")
         capabilities = "\n".join(f"- {capability}" for capability in GAME_FIRST_RELEASE_CAPABILITIES)
-        deferred = _selected_bullets("Select deferred game capabilities", GAME_DEFERRED_CAPABILITIES, other_example="New-game-plus mode.")
+        deferred = _selected_bullets("Select deferred game capabilities", GAME_DEFERRED_CAPABILITIES)
         technology = "To be determined by the factory from the game format, selected platforms, and project brief."
         constraints = "To be determined by the factory from the game format, selected platforms, and project brief."
         non_goals = "No copied branding, assets, text, layouts, or distinctive interactions."
