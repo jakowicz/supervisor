@@ -66,7 +66,12 @@ def test_game_target_family_only_offers_compatible_game_targets(monkeypatch):
     family, targets = manage._choose_target_family("Game")
 
     assert family == "Console game"
-    assert targets == ("PlayStation", "Xbox", "Nintendo Switch", "PC game storefronts")
+    assert targets == (
+        "PlayStation",
+        "Xbox",
+        "Nintendo Switch",
+        "PC game storefronts (Steam, Epic Games Store, GOG, itch.io)",
+    )
 
 
 def test_initialise_project_scaffolds_a_safe_empty_project(monkeypatch, tmp_path: Path):

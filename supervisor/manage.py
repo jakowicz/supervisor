@@ -127,7 +127,7 @@ TARGET_SYSTEMS = (
     "PlayStation",
     "Xbox",
     "Nintendo Switch",
-    "PC game storefronts",
+    "PC game storefronts (Steam, Epic Games Store, GOG, itch.io)",
     "Meta Quest / virtual reality",
     "Augmented or mixed reality",
     "Kiosk, point-of-sale, or dedicated hardware",
@@ -174,11 +174,11 @@ GAME_TARGET_FAMILIES = (
             "macOS",
             "Windows",
             "Linux",
-            "PC game storefronts",
+            "PC game storefronts (Steam, Epic Games Store, GOG, itch.io)",
         ),
     ),
     ("Living-room TV game", ("Apple TV / tvOS", "Android TV / Google TV", "Amazon Fire TV", "Samsung Smart TV / Tizen", "LG Smart TV / webOS", "Roku", "Hisense / VIDAA")),
-    ("Console game", ("PlayStation", "Xbox", "Nintendo Switch", "PC game storefronts")),
+    ("Console game", ("PlayStation", "Xbox", "Nintendo Switch", "PC game storefronts (Steam, Epic Games Store, GOG, itch.io)")),
     ("Spatial game", ("Meta Quest / virtual reality", "Augmented or mixed reality")),
 )
 
@@ -309,7 +309,9 @@ def _choose_many(label: str, options: tuple[str, ...]) -> list[str]:
             f"{'›' if index == current else ' '} [{'x' if index in selected else ' '}] {option}"
             for index, option in enumerate(options)
         )
-        sys.stdout.write("\n".join(lines) + "\n")
+        # Raw terminal mode disables the normal NL-to-CRLF conversion. Use an
+        # explicit carriage return so each checkbox begins in the same column.
+        sys.stdout.write("\r\n".join(lines) + "\r\n")
         sys.stdout.flush()
 
     stream = sys.stdin
