@@ -145,6 +145,27 @@ def test_non_interactive_initial_creates_a_runnable_project_workspace(monkeypatc
     assert "## Art direction" in brief.read_text(encoding="utf-8")
 
 
+def test_golden_scripted_initial_command_creates_a_resumable_workspace(monkeypatch, tmp_path: Path):
+    checkout = tmp_path / "supervisor"
+    checkout.mkdir()
+    (checkout / "pyproject.toml").write_text("", encoding="utf-8")
+    (checkout / ".git").mkdir()
+    (tmp_path / ".env").write_text("SUPERVISOR_CODING_AGENTS=codex\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "argv", [
+        "supervisor", "initial", "--non-interactive", "--project-name", "golden", "--category", "Game",
+        "--product", "A compact fantasy adventure", "--reference", "Final Fantasy V", "--art-direction", "painterly fantasy", "--force",
+    ])
+
+    manage.main()
+
+    workspace = tmp_path / "projects" / "golden"
+    assert (workspace / "INITIAL.md").is_file()
+    assert (workspace / ".env").is_file()
+    assert (workspace / ".state").is_dir()
+    assert "ART_DIRECTION_MODE=user_provided" in (workspace / ".env").read_text(encoding="utf-8")
+
+
 def test_project_slug_is_safe_for_a_workspace_path():
     assert manage._project_slug("Final Fantasy V: Reborn!") == "final-fantasy-v-reborn"
 
