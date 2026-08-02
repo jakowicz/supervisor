@@ -24,7 +24,28 @@ from .storage import RunStore
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run one evidence-gated supervisor task.")
+    parser = argparse.ArgumentParser(
+        description="Run one evidence-gated Supervisor task or an entire runbook collection.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""Examples:
+  supervisor-run --task-id D005
+      Run the installed runbook D005.
+  supervisor-run --runbook path/to/T001.md
+      Run one explicit runbook file.
+  supervisor-run --task-range D007-D010
+      Run a fixed sequential range; stop at the first task needing review.
+  supervisor-run --run-all --runbooks-dir runbooks
+      Run a collection once through completion. INITIAL.md supplies shared
+      project context; newly created runbooks and registered child collections
+      are discovered automatically.
+  supervisor-run --run-initial --runbooks-dir runbooks
+      Run only the first declared task after reading INITIAL.md.
+
+Use supervisor initial to create INITIAL.md interactively. Use
+supervisor-reports list, task-state, or show to inspect evidence and recovery
+state. An accepted task is skipped on later collection runs unless --retry is
+given for that task explicitly.""",
+    )
     parser.add_argument("--task-id", help="Runbook task ID, for example D005. Automatically loads runbooks/<ID>.md when present.")
     parser.add_argument("--task-range", help="Sequential runbook range, for example D007-D010. Stops at the first task that is not accepted.")
     parser.add_argument(

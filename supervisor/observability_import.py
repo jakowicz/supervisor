@@ -37,7 +37,22 @@ def import_run(telemetry: SupervisorTelemetry, payload: dict[str, Any], run_numb
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Backfill local SQLite supervisor history into local Langfuse.")
+    parser = argparse.ArgumentParser(
+        description="Backfill local SQLite Supervisor history into configured Langfuse observability.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""Examples:
+  supervisor-observability-import
+      Import all stored local runs into the configured Langfuse project.
+  supervisor-observability-import --task R0007
+      Import only one task's history.
+  supervisor-observability-import --limit 20
+      Import at most the twenty newest stored runs.
+  supervisor-observability-import --database path/to/supervisor.sqlite3
+      Read a specific SQLite database instead of SUPERVISOR_DATABASE_PATH.
+
+Set SUPERVISOR_OBSERVABILITY_ENABLED=true and the Langfuse configuration first.
+This command reads SQLite history; it does not execute or alter task work.""",
+    )
     parser.add_argument("--database", type=Path, help="Override SUPERVISOR_DATABASE_PATH.")
     parser.add_argument("--task", help="Only import one task ID.")
     parser.add_argument("--limit", type=int, help="Import at most this many newest runs.")

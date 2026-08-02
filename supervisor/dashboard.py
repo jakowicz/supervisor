@@ -261,7 +261,20 @@ def render_logs(live_items: list[dict] | None = None, database: Path | None = No
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Serve the read-only supervisor metrics dashboard.")
+    parser = argparse.ArgumentParser(
+        description="Serve the read-only Supervisor metrics and evidence dashboard on localhost.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""Examples:
+  supervisor-dashboard
+      Start on SUPERVISOR_DASHBOARD_PORT (default 8765), or choose a free port.
+  supervisor-dashboard --port 9000
+      Start on localhost:9000; fail if that explicitly requested port is busy.
+  supervisor-dashboard --no-reload
+      Disable development-time restart when dashboard source files change.
+
+Run at least one supervisor task first so the local SQLite evidence database
+exists. The dashboard is read-only and listens only on localhost.""",
+    )
     parser.add_argument("--port", type=int, help="Dashboard port. Defaults to the configured port or the next free localhost port.")
     parser.add_argument("--no-reload", action="store_true", help="Disable automatic restart when dashboard Python files change.")
     arguments = parser.parse_args()

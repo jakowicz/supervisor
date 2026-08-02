@@ -237,7 +237,25 @@ def browse(connection: sqlite3.Connection, path: Path) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Inspect read-only supervisor reports.")
+    parser = argparse.ArgumentParser(
+        description="Inspect read-only Supervisor execution reports, evidence, and recovery state.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""Examples:
+  supervisor-reports list
+      Show recent runs and any active local run logs.
+  supervisor-reports list --task R0007
+      Limit the list to one task ID.
+  supervisor-reports task-state R0007
+      Inspect the durable state and checkpoints used for recovery.
+  supervisor-reports show <run-id>
+      Show the concise accepted/failed progression for one run.
+  supervisor-reports events <run-id> --raw
+      Show all detailed stage evidence, including preserved worker output.
+  supervisor-reports export <run-id> --output run.json
+      Export the complete stored run record without modifying it.
+
+Reports are read-only. Run supervisor-run to execute or retry work.""",
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
     list_parser = subparsers.add_parser("list", help="List recent task runs.")
     list_parser.add_argument("--task", help="Filter by task ID, for example D006.")

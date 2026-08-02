@@ -742,7 +742,25 @@ def initialise_project(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Configure and maintain an evidence-gated supervisor.")
+    parser = argparse.ArgumentParser(
+        description="Create, configure, update, and maintain an evidence-gated Supervisor project.",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""Common workflows:
+  supervisor init ../my-project
+      Create an empty project with a Supervisor checkout and starter runbooks.
+  supervisor initial --force
+      Interactively write runbooks/INITIAL.md for a document-producing factory.
+  supervisor configure
+      Review the local .env, including coding agents and stage order.
+  supervisor update
+      Fast-forward this project's supervisor/ checkout from origin/main.
+  supervisor upgrade
+      Update the checkout that installed the currently invoked Supervisor CLI.
+
+Use `supervisor <command> --help` for that command's options. After setup, use
+supervisor-run to execute runbooks, supervisor-reports to inspect evidence, and
+supervisor-dashboard to view the local dashboard.""",
+    )
     commands = parser.add_subparsers(dest="command", required=True)
     configure_parser = commands.add_parser("configure", help="Interactively create or update an ignored .env configuration file.")
     configure_parser.add_argument("--config", type=Path, default=Path(".env"), help="Configuration file to write (default: .env).")
