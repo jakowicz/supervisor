@@ -33,6 +33,7 @@ def load_task(path: Path) -> Task:
     if missing:
         raise ValueError(f"{path} is missing metadata: {', '.join(sorted(missing))}")
     is_r_series = re.fullmatch(r"R\d+", metadata["task_id"]) is not None
+    is_game_design_task = re.fullmatch(r"G\d+", metadata["task_id"]) is not None
     if is_r_series:
         dependencies = [value.strip() for value in metadata.get("dependencies", "").split(",") if value.strip()]
         if len(dependencies) != len(set(dependencies)) or any(not re.fullmatch(r"R\d+", dependency) for dependency in dependencies):
@@ -92,6 +93,10 @@ def load_task(path: Path) -> Task:
                 raise ValueError(f"{path} has invalid audio_loop; use required or not_required.")
         elif declared_audio or metadata["audio_brief"].strip() or metadata["audio_duration_seconds"].strip() not in {"", "0"} or metadata["audio_loop"] not in {"", "not_applicable"}:
             raise ValueError(f"{path} declares audio fields but audio_impact is not_applicable.")
+    if is_game_design_task:
+        batch = metadata.get("design_authoring_batch", "")
+        if not re.fullmatch(r"GB\d+", batch):
+            raise ValueError(f"{path} is a G-series design task and must declare design_authoring_batch such as GB0001.")
     criteria: list[str] = []
     current: list[str] = []
     for line in _section(document, "Acceptance criteria").splitlines():
@@ -130,5 +135,6 @@ def load_task(path: Path) -> Task:
         source_specifications=[value.strip() for value in metadata.get("source_specifications", "").split(",") if value.strip()],
         source_catalogue_ids=[value.strip() for value in metadata.get("source_catalogue_ids", "").split(",") if value.strip()],
         authoring_batch=metadata.get("authoring_batch", ""),
+        design_authoring_batch=metadata.get("design_authoring_batch", ""),
         factory_stages=[value.strip() for value in metadata.get("factory_stages", "").split(",") if value.strip()],
     )

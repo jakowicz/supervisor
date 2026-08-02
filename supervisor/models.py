@@ -103,6 +103,9 @@ class Task(BaseModel):
     source_specifications: list[str] = Field(default_factory=list)
     source_catalogue_ids: list[str] = Field(default_factory=list)
     authoring_batch: str = ""
+    # G-series design tasks use their own bounded authoring layer (GB files),
+    # separate from B-series writers that create implementation R tasks.
+    design_authoring_batch: str = ""
     factory_stages: list[str] = Field(default_factory=list)
     # The graph sets this only for the independent Codex final-review stage.
     # Runbooks always remain implementation contracts and need not declare it.

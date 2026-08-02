@@ -210,7 +210,7 @@ def test_dependency_gate_waits_for_unaccepted_r_series_prerequisites(monkeypatch
 def test_collection_rediscovers_a_later_generated_g_wave(monkeypatch, tmp_path: Path):
     collection = tmp_path / "game-design-runbooks"
     collection.mkdir()
-    template = "---\ntask_id: {task_id}\nsequence: {sequence}\ntitle: Design\nbrowser_impact: not_applicable\nplaywright_spec:\n---\n\n## Objective\n\nDesign.\n\n## Acceptance criteria\n\n- Done.\n"
+    template = "---\ntask_id: {task_id}\nsequence: {sequence}\ntitle: Design\nbrowser_impact: not_applicable\nplaywright_spec:\ndesign_authoring_batch: GB0001\n---\n\n## Objective\n\nDesign.\n\n## Acceptance criteria\n\n- Done.\n"
     (collection / "G0001.md").write_text(template.format(task_id="G0001", sequence=1), encoding="utf-8")
     database = tmp_path / ".state" / "game-design-runbooks.sqlite3"
     calls = []
@@ -230,6 +230,24 @@ def test_collection_rediscovers_a_later_generated_g_wave(monkeypatch, tmp_path: 
 
     assert _run_collection_until_complete(collection, False, False, database, "# Brief") is True
     assert calls == [["G0001"], ["G0002"]]
+
+
+def test_gb_writer_output_must_be_owned_by_its_design_batch(tmp_path: Path):
+    collection = tmp_path / "game-design-runbooks"
+    collection.mkdir()
+    writer = collection / "GB0001.md"
+    writer.write_text(
+        "---\ntask_id: GB0001\nsequence: 1\ntitle: Write design tasks\nbrowser_impact: not_applicable\nplaywright_spec:\n---\n\n## Objective\n\nWrite G files.\n\n## Output list\n\n- `G0001.md`\n\n## Acceptance criteria\n\n- G exists.\n",
+        encoding="utf-8",
+    )
+    design = collection / "G0001.md"
+    design.write_text(
+        "---\ntask_id: G0001\nsequence: 2\ntitle: Design trivia\nbrowser_impact: not_applicable\nplaywright_spec:\ndesign_authoring_batch: GB0001\n---\n\n## Objective\n\nDesign trivia.\n\n## Acceptance criteria\n\n- Done.\n",
+        encoding="utf-8",
+    )
+    assert _authoring_output_errors(writer) == []
+    design.write_text(design.read_text(encoding="utf-8").replace("GB0001", "GB0002"), encoding="utf-8")
+    assert _authoring_output_errors(writer) == ["G0001.md has design_authoring_batch GB0002"]
 
 
 def test_game_design_completion_gate_requires_accepted_final_audit(tmp_path: Path):

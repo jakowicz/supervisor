@@ -650,18 +650,19 @@ def _project_database_for_runbook(workspace: Path, runbook: Path, factory_databa
 def _authoring_output_errors(runbook: Path) -> list[str]:
     """Return structural errors for the R contracts owned by one B runbook."""
 
-    if not re.fullmatch(r"B\d+", runbook.stem):
+    if not re.fullmatch(r"(?:B|GB)\d+", runbook.stem):
         return []
     document = runbook.read_text(encoding="utf-8")
     output_section = re.search(r"^## Output list\s*$\n(.*?)(?=^## |\Z)", document, re.MULTILINE | re.DOTALL)
     if not output_section:
         return ["missing an ## Output list section"]
-    expected_ids = sorted(set(re.findall(r"\.\./runbooks/(R\d+)\.md", output_section.group(1))))
+    is_game_design_author = runbook.stem.startswith("GB")
+    expected_ids = sorted(set(re.findall(r"(?:\.\./runbooks/)?(" + (r"G\d+" if is_game_design_author else r"R\d+") + r")\.md", output_section.group(1))))
     if not expected_ids:
         return ["declares no R-series outputs"]
     errors: list[str] = []
     for task_id in expected_ids:
-        output = runbook.parent.parent / "runbooks" / f"{task_id}.md"
+        output = (runbook.parent / f"{task_id}.md") if is_game_design_author else (runbook.parent.parent / "runbooks" / f"{task_id}.md")
         if not output.is_file():
             errors.append(f"missing {task_id}.md")
             continue
@@ -672,8 +673,10 @@ def _authoring_output_errors(runbook: Path) -> list[str]:
             continue
         if task.task_id != task_id:
             errors.append(f"{task_id}.md declares task_id {task.task_id}")
-        if task.authoring_batch != runbook.stem:
-            errors.append(f"{task_id}.md has authoring_batch {task.authoring_batch or '<blank>'}")
+        batch = task.design_authoring_batch if is_game_design_author else task.authoring_batch
+        field = "design_authoring_batch" if is_game_design_author else "authoring_batch"
+        if batch != runbook.stem:
+            errors.append(f"{task_id}.md has {field} {batch or '<blank>'}")
     return errors
 
 

@@ -109,3 +109,17 @@ def test_r_series_dependencies_reject_invalid_ids(tmp_path):
 
     with pytest.raises(ValueError, match="invalid dependencies"):
         load_task(path)
+
+
+def test_g_series_design_task_requires_a_gb_authoring_batch(tmp_path):
+    path = tmp_path / "G0001.md"
+    path.write_text(
+        "---\ntask_id: G0001\nsequence: 1\ntitle: Trivia categories\nbrowser_impact: not_applicable\nplaywright_spec:\n"
+        "design_authoring_batch: GB0001\n---\n\n## Objective\n\nDesign categories.\n\n## Acceptance criteria\n\n- Categories are complete.\n",
+        encoding="utf-8",
+    )
+    assert load_task(path).design_authoring_batch == "GB0001"
+
+    path.write_text(path.read_text(encoding="utf-8").replace("design_authoring_batch: GB0001\n", ""), encoding="utf-8")
+    with pytest.raises(ValueError, match="design_authoring_batch"):
+        load_task(path)
