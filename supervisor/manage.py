@@ -1141,7 +1141,7 @@ def update_workspace(start: Path | None = None) -> Path:
 
     package_root = project_supervisor_checkout(start or Path.cwd())
     repository_root = Path(_git_output(["git", "rev-parse", "--show-toplevel"], cwd=package_root))
-    if _git_output(["git", "status", "--porcelain"], cwd=repository_root):
+    if _git_output(["git", "status", "--porcelain", "--untracked-files=no"], cwd=repository_root):
         raise RuntimeError(
             f"Refusing to update a Supervisor checkout with local changes: {repository_root}. "
             "Commit, stash, or discard those changes first."
@@ -1164,7 +1164,7 @@ def upgrade_cli(start: Path | None = None) -> Path:
 
     package_root = (start or Path(__file__).resolve().parents[1]).resolve()
     repository_root = Path(_git_output(["git", "rev-parse", "--show-toplevel"], cwd=package_root))
-    if _git_output(["git", "status", "--porcelain"], cwd=repository_root):
+    if _git_output(["git", "status", "--porcelain", "--untracked-files=no"], cwd=repository_root):
         raise RuntimeError(
             f"Refusing to upgrade a Supervisor checkout with local changes: {repository_root}. "
             "Commit, stash, or discard those changes first."

@@ -444,6 +444,21 @@ def test_update_workspace_refuses_tracked_changes(monkeypatch, tmp_path: Path):
         raise AssertionError("Expected a dirty Supervisor checkout to be rejected.")
 
 
+def test_update_workspace_ignores_untracked_generated_metadata(monkeypatch, tmp_path: Path):
+    checkout = tmp_path / "supervisor"
+    checkout.mkdir()
+    (checkout / "pyproject.toml").write_text("", encoding="utf-8")
+    (checkout / ".git").mkdir()
+    commands: list[tuple[list[str], Path | None]] = []
+    monkeypatch.setattr(manage, "_git_output", lambda command, *, cwd: str(checkout) if command[1] == "rev-parse" else "")
+    monkeypatch.setattr(manage, "_run", lambda command, *, cwd=None: commands.append((command, cwd)))
+    monkeypatch.setattr(manage.sys, "executable", "/tools/python")
+
+    manage.update_workspace(tmp_path)
+
+    assert commands[0] == (["git", "pull", "--ff-only", "origin", "main"], checkout)
+
+
 def test_project_supervisor_checkout_rejects_unrelated_directory(tmp_path: Path):
     try:
         manage.project_supervisor_checkout(tmp_path)
