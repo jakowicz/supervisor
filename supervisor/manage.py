@@ -265,6 +265,16 @@ APPLICATION_BRIEF_PROFILES = {
         "deferred": ("Advanced workflows", "Integrations", "Automation", "Additional platforms"),
     },
 }
+PRODUCT_DESCRIPTION_EXAMPLES = {
+    "Consumer application": "A personal task and habit app that helps individuals plan their day across phone and desktop.",
+    "Business / internal application": "An internal operations system for support staff to triage, assign, and resolve customer requests.",
+    "Game": "A turn-based fantasy role-playing game for short mobile and desktop sessions.",
+    "Document, planning, or content system": "A collaborative workspace for teams to create plans, documents, and publishable knowledge.",
+    "Operating-system or device utility": "A desktop utility that helps users understand, configure, and recover device storage safely.",
+    "Developer tool or platform": "A developer tool that analyses a codebase, explains architecture, and helps engineers ship changes safely.",
+    "Service, API, or background system": "An API and background processing service that receives files, validates them, and delivers reliable results to client applications.",
+    "Other": "A focused product that helps its intended users complete one valuable workflow clearly and reliably.",
+}
 
 RUNBOOK_TEMPLATE = """---
 task_id: T001
@@ -688,7 +698,7 @@ def create_initial_brief(path: Path, *, project_name: str, force: bool = False) 
     values = {
         "project_name": project_name,
         "project_slug": project_slug,
-        "product": _required("Describe what you are creating", example="A turn-based fantasy role-playing game for short mobile and desktop sessions."),
+        "product": _required("Describe what you are creating", example=PRODUCT_DESCRIPTION_EXAMPLES[category]),
         "category": category,
         "target_family": target_family,
         "game_characteristics": "\n".join(f"- [x] {item}" for item in game_characteristics) or "- Not specified.",
