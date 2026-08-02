@@ -708,6 +708,37 @@ def _unmet_dependencies(runbooks: list[Path], states: dict[str, dict | None]) ->
     return unmet
 
 
+def _game_design_completion_error(workspace: Path, database_path: Path) -> str | None:
+    """Return the durable G-series handoff failure, if a game is incomplete."""
+    manifest_path = workspace / "planning" / "game-design-manifest.json"
+    if not manifest_path.is_file():
+        return "missing planning/game-design-manifest.json"
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        return "game-design-manifest.json is not valid JSON"
+    if not isinstance(manifest, dict) or manifest.get("status") != "accepted":
+        return "game-design manifest status is not accepted"
+    audit = manifest.get("final_audit")
+    if not isinstance(audit, dict) or not isinstance(audit.get("task_id"), str) or audit.get("status") != "accepted":
+        return "game-design manifest has no accepted final_audit"
+    if manifest.get("pending_modules") or manifest.get("blocked_modules"):
+        return "game-design manifest still has pending or blocked modules"
+    modules = manifest.get("modules")
+    if not isinstance(modules, list) or not modules:
+        return "game-design manifest has no completed modules"
+    if any(not isinstance(module, dict) or module.get("status") != "accepted" or not module.get("design_output_paths") for module in modules):
+        return "game-design manifest contains incomplete module evidence"
+    store = RunStore(database_path)
+    try:
+        state = store.state_for(audit["task_id"])
+    finally:
+        store.close()
+    if (state or {}).get("status") != "accepted":
+        return f"G final audit {audit['task_id']} is not accepted in durable state"
+    return None
+
+
 def _run_ready_prerequisite_collections(
     runbooks: list[Path], states: dict[str, dict | None], database_path: Path,
     dry_run: bool, continue_on_nonpass: bool, repo_root: Path | None,
@@ -742,6 +773,10 @@ def _run_ready_prerequisite_collections(
             context = _initial_document(collection)
             if not _run_collection_until_complete(collection, dry_run, continue_on_nonpass, child_database, context, repo_root):
                 return False
+            if name == "game-design-runbooks":
+                error = _game_design_completion_error(workspace, child_database)
+                if error:
+                    raise ValueError(f"{runbook} cannot continue: {error}")
     return True
 
 
