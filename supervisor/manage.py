@@ -214,6 +214,57 @@ PLATFORM_STRATEGIES = ("Shared core with platform-specific input and UI", "One p
 SYNC_POLICIES = ("Local save only", "Cloud sync when signed in", "Offline-first with conflict resolution", "Online-only shared state")
 COMMON_COMPLIANCE = ("WCAG-style accessibility", "Localisation support", "Privacy consent and data controls", "Age rating or parental controls", "Store certification and submission requirements")
 SUPPORT_TARGETS = ("Latest supported OS/browser versions", "Current and previous major OS/browser versions", "Phone, tablet, desktop, and low-end device coverage", "Slow or offline network conditions")
+APPLICATION_BRIEF_PROFILES = {
+    "Consumer application": {
+        "audiences": ("Individual consumers", "Families or households", "Creators or enthusiasts", "Accessibility-first users"),
+        "outcomes": ("Complete a personal task quickly", "Track and improve a personal habit or goal", "Discover and consume useful content", "Create and share something useful"),
+        "first_sessions": ("Complete the main action and see a useful result", "Create an account and personalise the experience", "Import or add their first piece of data", "Understand the core value without assistance"),
+        "capabilities": ("Clear onboarding", "Core user workflow", "Account and cross-device data", "Settings and accessibility", "Error recovery and support"),
+        "deferred": ("Advanced personalisation", "Social/community features", "Integrations", "Premium or monetisation features"),
+    },
+    "Business / internal application": {
+        "audiences": ("Frontline operational staff", "Knowledge workers", "Managers and approvers", "Administrators"),
+        "outcomes": ("Complete an operational workflow", "Find accurate business information", "Review and approve work", "Manage users, data, or configuration"),
+        "first_sessions": ("Complete one real workflow with guidance", "Find a relevant record and take action", "Set up the workspace for a team", "Review a dashboard or queue"),
+        "capabilities": ("Role-aware access", "Core business workflow", "Search and filtering", "Audit-friendly history", "Settings and accessibility"),
+        "deferred": ("Advanced reporting", "External integrations", "Workflow automation", "Enterprise administration"),
+    },
+    "Document, planning, or content system": {
+        "audiences": ("Individual planners", "Collaborative teams", "Writers or content creators", "Reviewers and approvers"),
+        "outcomes": ("Create and organise useful content", "Plan and track work", "Collaborate on shared material", "Review and publish content"),
+        "first_sessions": ("Create the first document, plan, or item", "Organise content into a useful structure", "Invite a collaborator and share work", "Publish or export a first result"),
+        "capabilities": ("Create and edit content", "Organisation and search", "Version history", "Sharing and permissions", "Export and accessibility"),
+        "deferred": ("Advanced templates", "Automation", "Third-party integrations", "Publishing workflows"),
+    },
+    "Operating-system or device utility": {
+        "audiences": ("Everyday device users", "Power users", "IT/support staff", "Accessibility-first users"),
+        "outcomes": ("Configure or repair a device capability", "Understand device status", "Automate a routine device task", "Keep data and settings safe"),
+        "first_sessions": ("Complete setup safely", "See a clear device-status result", "Run the first useful utility action", "Understand permissions and recovery options"),
+        "capabilities": ("Safe setup and permissions", "Core device workflow", "Status and diagnostics", "Recovery and error handling", "Accessibility"),
+        "deferred": ("Automation", "Advanced diagnostics", "Enterprise controls", "Additional hardware support"),
+    },
+    "Developer tool or platform": {
+        "audiences": ("Individual developers", "Engineering teams", "Platform engineers", "Open-source maintainers"),
+        "outcomes": ("Build, test, debug, or ship software faster", "Understand a codebase or system", "Automate a development workflow", "Publish a reusable integration"),
+        "first_sessions": ("Install or connect the tool and complete a useful action", "Run a first command, build, or analysis", "Open a sample project and see a result", "Create a first integration"),
+        "capabilities": ("Installation and setup", "Core developer workflow", "Clear diagnostics", "Configuration and extensibility", "Documentation and examples"),
+        "deferred": ("Plugin ecosystem", "Advanced automation", "Hosted collaboration", "Enterprise controls"),
+    },
+    "Service, API, or background system": {
+        "audiences": ("Application developers", "Internal service owners", "Operations staff", "External integration partners"),
+        "outcomes": ("Integrate a reliable capability", "Process work asynchronously", "Operate and monitor a service", "Move or transform data safely"),
+        "first_sessions": ("Make a successful first API call or job run", "Connect a client and inspect a result", "Configure monitoring and see healthy status", "Import or process a first dataset"),
+        "capabilities": ("Authentication and authorisation", "Core API or job workflow", "Validation and error contracts", "Observability and recovery", "Documentation and examples"),
+        "deferred": ("Advanced rate controls", "Partner self-service", "Workflow automation", "Multi-region delivery"),
+    },
+    "Other": {
+        "audiences": ("Individual users", "Teams", "Administrators", "Developers or operators"),
+        "outcomes": ("Complete the main product workflow", "Find useful information", "Create or manage valuable data", "Collaborate or integrate with others"),
+        "first_sessions": ("Complete the first core workflow", "Create or import the first useful item", "Understand the product value", "Configure the product safely"),
+        "capabilities": ("Clear onboarding", "Core workflow", "Data and settings", "Error recovery", "Accessibility"),
+        "deferred": ("Advanced workflows", "Integrations", "Automation", "Additional platforms"),
+    },
+}
 
 RUNBOOK_TEMPLATE = """---
 task_id: T001
@@ -460,6 +511,29 @@ def _game_shared_requirement_options(characteristics: list[str]) -> tuple[str, .
     return tuple(dict.fromkeys(options))
 
 
+def _application_target_requirement_options(target: str) -> tuple[str, ...]:
+    """Derive target-specific delivery requirements for a non-game product."""
+
+    if target in {"Responsive public web application", "Desktop web application"}:
+        return ("Responsive layout", "Keyboard and pointer interaction", "Browser compatibility and web performance")
+    if target == "Progressive web app (PWA)":
+        return ("Installable PWA experience", "Offline cache and safe update behaviour")
+    if target in {"Android phone", "Android tablet / ChromeOS", "iPhone (iOS)", "iPad (iPadOS)"}:
+        return ("Touch interaction and orientation rules", "Mobile performance and download-size budget", "Mobile package and platform permission requirements")
+    if target in {"macOS", "Windows", "Linux"}:
+        return ("Desktop input, window, and display behaviour", "Desktop package, installation, and update behaviour")
+    if "TV" in target or target in {"Samsung Smart TV / Tizen", "LG Smart TV / webOS", "Roku", "Hisense / VIDAA"}:
+        return ("Remote-control navigation", "Ten-foot UI readability and safe viewing-area layout")
+    if target in {"Meta Quest / virtual reality", "Augmented or mixed reality"}:
+        return ("Spatial input and comfort requirements", "Spatial performance and boundary behaviour")
+    return ("Target-appropriate packaging, input, performance, and release behaviour",)
+
+
+def _application_shared_requirements(category: str) -> tuple[str, ...]:
+    profile = APPLICATION_BRIEF_PROFILES[category]
+    return tuple((*profile["capabilities"], "Cross-device state where applicable", "Accessibility, privacy, error recovery, and observability"))
+
+
 def _game_target_requirements(target: str, characteristics: list[str]) -> str:
     """Derive baseline requirements from the selected game format and targets."""
 
@@ -492,9 +566,9 @@ inventing requirements.
 
 {values.get('game_characteristics', '- Not applicable.')}
 
-## Shared game requirements
+## Shared product requirements
 
-{values.get('shared_game_requirements', '- Not applicable.')}
+{values.get('shared_requirements', '- Not applicable.')}
 
 ## Who is it for, and what must it help them do?
 
@@ -574,16 +648,13 @@ def create_initial_brief(path: Path, *, project_name: str, force: bool = False) 
         if category == "Game"
         else []
     )
-    shared_game_requirements = "\n".join(
+    shared_requirements = "\n".join(
         f"- {requirement}" for requirement in _game_shared_requirement_options(game_characteristics)
-    ) if category == "Game" else "- Not applicable."
+    ) if category == "Game" else "\n".join(f"- {requirement}" for requirement in _application_shared_requirements(category))
     target_details = (
         {target: _game_target_requirements(target, game_characteristics) for target in targets}
         if category == "Game"
-        else {
-            target: _required(f"Requirements for {target} (input, screens, offline, performance, release constraints)")
-            for target in targets
-        }
+        else {target: "\n".join(f"- {requirement}" for requirement in _application_target_requirement_options(target)) for target in targets}
     )
     if category == "Game":
         player_experience = f"- {_choose_one_with_example('Choose the intended player experience', GAME_PLAYER_EXPERIENCE, example='Casual players.')}"
@@ -601,18 +672,19 @@ def create_initial_brief(path: Path, *, project_name: str, force: bool = False) 
         compliance = "Provide localisation support, privacy consent and player data controls, and age-rating or parental-control requirements. Apply platform-appropriate accessibility requirements (including WCAG guidance for web surfaces). Build the appropriate distributable package for every selected platform."
         support = "Support device classes and OS/browser versions that remain widely used for every selected platform. Make slow or offline network conditions usable wherever feasible without compromising the core game design or required online features."
     else:
-        users = _required("Who is it for", example="Independent workers who need to plan a personal backlog.")
-        primary_outcome = _required("What is their primary outcome", example="Capture, organise, and complete important work.")
-        first_session = _required("What makes the first useful session successful", example="They create, prioritise, and complete their first item.")
-        capabilities = _multiline("Required first-release capabilities", example="Create a task; group tasks into projects; mark a task complete.")
-        deferred = _multiline("Later or deferred capabilities", example="Shared team workspaces; billing; integrations.")
-        technology = _required("Technology and repository constraints", example="Use the existing TypeScript web application; no paid services.")
-        constraints = _selected_bullets("Select product constraints that apply", COMMON_CONSTRAINTS, other_example="Must work in a regulated healthcare environment.")
-        non_goals = _required("Explicitly excluded work", example="No team billing or marketplace in the first release.")
-        parity = _choose_one_with_example("Select the cross-platform delivery strategy", PLATFORM_STRATEGIES, example="Shared core with platform-specific input and UI.")
-        sync = _choose_one_with_example("Select the data synchronisation policy", SYNC_POLICIES, example="Offline-first with conflict resolution.")
-        compliance = _selected_bullets("Select compliance and release requirements", COMMON_COMPLIANCE, other_example="HIPAA review before launch.")
-        support = _selected_bullets("Select supported device and network conditions", SUPPORT_TARGETS, other_example="Modern evergreen browsers on 4G connections.")
+        profile = APPLICATION_BRIEF_PROFILES[category]
+        users = f"- {_choose_one_with_example('Choose the intended audience', profile['audiences'], example=profile['audiences'][0] + '.')}"
+        primary_outcome = _choose_one_with_example("Choose the primary user outcome", profile["outcomes"], example=profile["outcomes"][0] + ".")
+        first_session = _choose_one_with_example("Choose a successful first session", profile["first_sessions"], example=profile["first_sessions"][0] + ".")
+        capabilities = "\n".join(f"- {capability}" for capability in profile["capabilities"])
+        deferred = "\n".join(f"- {capability}" for capability in profile["deferred"])
+        technology = "To be determined by the factory from the product category, selected platforms, and brief."
+        constraints = "To be determined by the factory from the product category, selected platforms, and brief."
+        non_goals = "No copied branding, assets, text, layouts, or distinctive interactions."
+        parity = "Build every selected platform in tandem from one shared core, with feature parity by default and platform-specific input or UI adaptations only where necessary."
+        sync = "Store user state remotely against the user account so it can be shared across selected devices wherever possible. Provide a local offline cache, safe synchronisation, and conflict recovery where the product supports offline work."
+        compliance = "Provide localisation support, privacy consent and user data controls, and platform-appropriate accessibility requirements (including WCAG guidance for web surfaces). Build the appropriate distributable package for every selected platform."
+        support = "Support device classes and OS/browser versions that remain widely used for every selected platform. Make slow or offline network conditions usable wherever feasible without compromising required online features."
     values = {
         "project_name": project_name,
         "project_slug": project_slug,
@@ -620,7 +692,7 @@ def create_initial_brief(path: Path, *, project_name: str, force: bool = False) 
         "category": category,
         "target_family": target_family,
         "game_characteristics": "\n".join(f"- [x] {item}" for item in game_characteristics) or "- Not specified.",
-        "shared_game_requirements": shared_game_requirements,
+        "shared_requirements": shared_requirements,
         "users": users,
         "primary_outcome": primary_outcome,
         "first_session": first_session,

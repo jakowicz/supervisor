@@ -124,6 +124,17 @@ def test_game_target_requirements_are_derived_without_an_extra_prompt():
     assert "Stable frame-time and input-latency target" in shared
 
 
+def test_non_game_profiles_provide_guided_choices_and_inferred_requirements():
+    profile = manage.APPLICATION_BRIEF_PROFILES["Developer tool or platform"]
+    web_requirements = manage._application_target_requirement_options("Responsive public web application")
+    shared_requirements = manage._application_shared_requirements("Developer tool or platform")
+
+    assert "Individual developers" in profile["audiences"]
+    assert "Build, test, debug, or ship software faster" in profile["outcomes"]
+    assert "Responsive layout" in web_requirements
+    assert "Accessibility, privacy, error recovery, and observability" in shared_requirements
+
+
 def test_selected_bullets_combines_presets_and_optional_detail(monkeypatch):
     monkeypatch.setattr(manage, "_choose_many", lambda *_args: ["Accessible controls"])
     monkeypatch.setattr("builtins.input", lambda _prompt: "Custom requirement")
