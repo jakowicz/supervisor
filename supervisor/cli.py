@@ -19,6 +19,7 @@ from .failure_summary import summarize_failure
 from .models import RunEvent, Status, Task, TaskRun, WorkerResult, model_to_dict
 from .observability import SupervisorTelemetry
 from .recovery import latest_qwen_result, qwen_logs
+from .routing import primary_agent
 from .runbooks import load_task
 from .storage import RunStore
 
@@ -217,6 +218,8 @@ given for that task explicitly.""",
         if not arguments.task_id or not arguments.title:
             parser.error("Provide --task-id for an installed runbook, --runbook PATH, or both --task-id and --title for an ad-hoc task.")
         task = Task(task_id=arguments.task_id, title=arguments.title, objective=arguments.objective, acceptance_criteria=arguments.acceptance, sequence=arguments.sequence or 0, browser_impact=arguments.browser_impact or "not_applicable", playwright_specs=arguments.playwright_spec)
+    if project_workspace and requested_runbook:
+        database_path = _project_database_for_runbook(project_workspace, requested_runbook, database_path)
     initial_context = os.getenv("SUPERVISOR_INITIAL_CONTEXT", "").strip()
     if initial_context:
         task = task.model_copy(update={"objective": "\n\n".join((task.objective, f"Initial project brief:\n{initial_context}"))})
@@ -390,10 +393,12 @@ given for that task explicitly.""",
     initial_events = [recovered_event] if recovered_event else []
     initial_results = [recovered_result] if recovered_event else []
     initial_attempts = {"qwen": 1} if recovered_event else {}
-    resume_stage = arguments.start_on or ("qwen" if arguments.retry else ("codex_final" if arguments.verify or recovered_event else _resume_stage(previous_state)))
+    # A retry repeats the configured primary implementation agent. Older
+    # versions hard-coded Qwen here, silently bypassing a Codex-only project.
+    resume_stage = arguments.start_on or (_retry_stage() if arguments.retry else ("codex_final" if arguments.verify or recovered_event else _resume_stage(previous_state)))
     try:
         with telemetry.run(task, run_id, run_number) as run_span:
-            final_state = create_graph(SupervisorConfig(repo_root=repo_root, dry_run=arguments.dry_run, progress=progress, event_log=event_log, stage_log_path=stage_log_path, checkpoint=checkpoint, progress_heartbeat_seconds=heartbeat_seconds, telemetry=telemetry)).invoke({"task": task, "run_id": run_id, "worker_results": initial_results, "events": initial_events, "attempts": initial_attempts, "active_agent": "qwen", "notes": ["Recovered prior Qwen result; starting independent validation."] if recovered_event else [], "resume_stage": resume_stage})
+            final_state = create_graph(SupervisorConfig(repo_root=repo_root, dry_run=arguments.dry_run, progress=progress, event_log=event_log, stage_log_path=stage_log_path, checkpoint=checkpoint, progress_heartbeat_seconds=heartbeat_seconds, telemetry=telemetry)).invoke({"task": task, "run_id": run_id, "worker_results": initial_results, "events": initial_events, "attempts": initial_attempts, "active_agent": primary_agent(), "notes": ["Recovered prior Qwen result; starting independent validation."] if recovered_event else [], "resume_stage": resume_stage})
             telemetry.complete_run(run_span, final_state["final_status"], final_state["route"], len(final_state["events"]))
     except BaseException as error:
         store.abandon_task(task.task_id, run_id, f"Interrupted during supervisor run: {type(error).__name__}: {error}")
@@ -515,6 +520,12 @@ def _can_recover_qwen(state: dict | None) -> bool:
     return bool(state and state.get("status") in {"interrupted", "implementing", "validating"})
 
 
+def _retry_stage() -> str:
+    """Retry through the project's configured primary implementation agent."""
+
+    return primary_agent()
+
+
 def _recovered_qwen_event(result: WorkerResult) -> RunEvent:
     """Record a recovered Qwen pass and route it through Codex final review."""
 
@@ -624,6 +635,116 @@ def _project_workspace(value: str) -> Path:
     return workspace
 
 
+def _project_database_for_runbook(workspace: Path, runbook: Path, factory_database: Path) -> Path:
+    """Keep targeted B/R retries in their child collection's durable state."""
+
+    try:
+        relative = runbook.resolve().relative_to(workspace.resolve())
+    except ValueError:
+        return factory_database
+    if relative.parent.name in {"authoring-runbooks", "runbooks"}:
+        return workspace / ".state" / f"{relative.parent.name}.sqlite3"
+    return factory_database
+
+
+def _authoring_output_errors(runbook: Path) -> list[str]:
+    """Return structural errors for the R contracts owned by one B runbook."""
+
+    if not re.fullmatch(r"B\d+", runbook.stem):
+        return []
+    document = runbook.read_text(encoding="utf-8")
+    output_section = re.search(r"^## Output list\s*$\n(.*?)(?=^## |\Z)", document, re.MULTILINE | re.DOTALL)
+    if not output_section:
+        return ["missing an ## Output list section"]
+    expected_ids = sorted(set(re.findall(r"\.\./runbooks/(R\d+)\.md", output_section.group(1))))
+    if not expected_ids:
+        return ["declares no R-series outputs"]
+    errors: list[str] = []
+    for task_id in expected_ids:
+        output = runbook.parent.parent / "runbooks" / f"{task_id}.md"
+        if not output.is_file():
+            errors.append(f"missing {task_id}.md")
+            continue
+        try:
+            task = load_task(output)
+        except ValueError as error:
+            errors.append(f"{task_id}.md is unreadable: {error}")
+            continue
+        if task.task_id != task_id:
+            errors.append(f"{task_id}.md declares task_id {task.task_id}")
+        if task.authoring_batch != runbook.stem:
+            errors.append(f"{task_id}.md has authoring_batch {task.authoring_batch or '<blank>'}")
+    return errors
+
+
+def _reopen_invalid_authoring_tasks(runbooks: list[Path], states: dict[str, dict | None], database_path: Path) -> list[str]:
+    """Reopen accepted B tasks whose promised R contracts are not loadable."""
+
+    reopened: list[str] = []
+    store = RunStore(database_path)
+    try:
+        for runbook in runbooks:
+            if (states.get(runbook.stem) or {}).get("status") != "accepted":
+                continue
+            errors = _authoring_output_errors(runbook)
+            if errors:
+                store.reopen_task(runbook.stem, "Authoring output validation failed: " + "; ".join(errors))
+                reopened.append(runbook.stem)
+    finally:
+        store.close()
+    return reopened
+
+
+def _unmet_dependencies(runbooks: list[Path], states: dict[str, dict | None]) -> dict[str, list[str]]:
+    """Return R tasks whose declared implementation dependencies are unaccepted."""
+
+    available = {path.stem for path in runbooks}
+    unmet: dict[str, list[str]] = {}
+    for runbook in runbooks:
+        task = load_task(runbook)
+        missing = [dependency for dependency in task.dependencies if dependency not in available or (states.get(dependency) or {}).get("status") != "accepted"]
+        if missing:
+            unmet[runbook.stem] = missing
+    return unmet
+
+
+def _run_ready_prerequisite_collections(
+    runbooks: list[Path], states: dict[str, dict | None], database_path: Path,
+    dry_run: bool, continue_on_nonpass: bool, repo_root: Path | None,
+) -> bool:
+    """Run project-local prerequisite collections once their task dependencies pass."""
+
+    state_directory = database_path.parent
+    if state_directory.name != ".state":
+        return True
+    workspace = state_directory.parent
+    known = {path.stem for path in runbooks}
+    for runbook in runbooks:
+        if (states.get(runbook.stem) or {}).get("status") == "accepted":
+            continue
+        task = load_task(runbook)
+        if not task.prerequisite_collections:
+            continue
+        if any((states.get(dependency) or {}).get("status") != "accepted" for dependency in task.dependencies if dependency in known):
+            continue
+        for name in task.prerequisite_collections:
+            if Path(name).name != name:
+                raise ValueError(f"{runbook} has invalid prerequisite collection {name!r}.")
+            collection = (workspace / name).resolve()
+            if not collection.is_relative_to(workspace):
+                raise ValueError(f"{runbook} requires missing project collection: {collection}")
+            if not collection.is_dir():
+                initial = workspace / "INITIAL.md"
+                if initial.is_file() and "Game" not in initial.read_text(encoding="utf-8"):
+                    continue
+                raise ValueError(f"{runbook} requires missing project collection: {collection}")
+            child_database = workspace / ".state" / f"{collection.name}.sqlite3"
+            context = _initial_document(collection)
+            if not _run_collection_until_complete(collection, dry_run, continue_on_nonpass, child_database, context, repo_root):
+                return False
+    return True
+
+
 def _run_task_range(
     runbooks: list[Path], dry_run: bool, continue_on_nonpass: bool, database_path: Path, initial_context: str = "", repo_root: Path | None = None
 ) -> bool:
@@ -692,15 +813,44 @@ def _run_collection_until_complete(
             raise ValueError(f"No runnable Markdown runbooks found in {directory}.")
         store = RunStore(database_path)
         try:
-            pending = [path for path in runbooks if (store.state_for(path.stem) or {}).get("status") != "accepted"]
+            states = {path.stem: store.state_for(path.stem) for path in runbooks}
         finally:
             store.close()
+        reopened = _reopen_invalid_authoring_tasks(runbooks, states, database_path)
+        if reopened:
+            print(
+                "COLLECTION REOPENED · " + ", ".join(reopened) +
+                " has invalid generated R-series contracts and will be repaired before continuing.",
+                file=sys.stderr,
+                flush=True,
+            )
+            continue
+        blocked = [path for path in runbooks if (states[path.stem] or {}).get("status") == "needs_user_review"]
+        if blocked:
+            print(
+                "COLLECTION BLOCKED · " + ", ".join(path.stem for path in blocked) +
+                " requires user review; use an explicit --retry after repairing the environment.",
+                file=sys.stderr,
+                flush=True,
+            )
+            return False
+        pending = [path for path in runbooks if (states[path.stem] or {}).get("status") != "accepted"]
+        if pending and not _run_ready_prerequisite_collections(
+            runbooks, states, database_path, dry_run, continue_on_nonpass, repo_root
+        ):
+            return False
+        unmet = _unmet_dependencies(runbooks, states)
+        runnable = [path for path in pending if path.stem not in unmet]
+        if pending and not runnable:
+            details = ", ".join(f"{task_id} waits for {','.join(dependencies)}" for task_id, dependencies in unmet.items())
+            print(f"COLLECTION WAITING · {details}", file=sys.stderr, flush=True)
+            return False
         if not pending:
             print(f"COLLECTION FINAL · {directory} has no pending tasks", file=sys.stderr, flush=True)
             return True
         wave += 1
         print(f"COLLECTION WAVE {wave:02d} · {len(pending)} pending tasks in {directory}", file=sys.stderr, flush=True)
-        if not _run_task_range(pending, dry_run, continue_on_nonpass, database_path, initial_context, repo_root):
+        if not _run_task_range(runnable, dry_run, continue_on_nonpass, database_path, initial_context, repo_root):
             return False
 
 

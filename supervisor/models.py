@@ -75,6 +75,13 @@ class Task(BaseModel):
     acceptance_criteria: list[str] = Field(default_factory=list)
     risk_level: str = "normal"
     sequence: int = 0
+    # R-series work may be authored independently, but never implemented
+    # before its declared contracts have been accepted.
+    dependencies: list[str] = Field(default_factory=list)
+    # A factory stage can pause its own collection until a project-scoped child
+    # collection has completed (for example game design before implementation
+    # runbook authoring).
+    prerequisite_collections: list[str] = Field(default_factory=list)
     browser_impact: str = "not_applicable"
     playwright_specs: list[str] = Field(default_factory=list)
     # Asset stages are opt-in.  Most engineering runbooks deliberately leave

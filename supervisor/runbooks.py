@@ -16,7 +16,7 @@ def _section(document: str, heading: str) -> str:
 
 
 def load_task(path: Path) -> Task:
-    """Parse the deliberately small, dependency-free runbook format."""
+    """Parse the deliberately small runbook format and its execution gates."""
 
     document = path.read_text(encoding="utf-8")
     metadata_match = re.match(r"^---\n(.*?)\n---\n", document, re.DOTALL)
@@ -34,6 +34,11 @@ def load_task(path: Path) -> Task:
         raise ValueError(f"{path} is missing metadata: {', '.join(sorted(missing))}")
     is_r_series = re.fullmatch(r"R\d+", metadata["task_id"]) is not None
     if is_r_series:
+        dependencies = [value.strip() for value in metadata.get("dependencies", "").split(",") if value.strip()]
+        if len(dependencies) != len(set(dependencies)) or any(not re.fullmatch(r"R\d+", dependency) for dependency in dependencies):
+            raise ValueError(f"{path} has invalid dependencies; use comma-separated R-series IDs.")
+        if metadata["task_id"] in dependencies:
+            raise ValueError(f"{path} cannot depend on itself.")
         provenance_metadata = {"source_specifications", "source_catalogue_ids", "authoring_batch", "factory_stages"}
         missing_provenance_metadata = provenance_metadata - metadata.keys()
         if missing_provenance_metadata:
@@ -106,6 +111,8 @@ def load_task(path: Path) -> Task:
         task_id=metadata["task_id"],
         title=metadata["title"],
         sequence=int(metadata["sequence"]),
+        dependencies=[value.strip() for value in metadata.get("dependencies", "").split(",") if value.strip()],
+        prerequisite_collections=[value.strip() for value in metadata.get("prerequisite_collections", "").split(",") if value.strip()],
         browser_impact=metadata["browser_impact"],
         playwright_specs=[metadata["playwright_spec"]] if metadata["playwright_spec"] else [],
         objective=_section(document, "Objective"),

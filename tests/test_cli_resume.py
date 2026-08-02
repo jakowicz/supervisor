@@ -5,7 +5,7 @@ import pytest
 from pathlib import Path
 
 from supervisor import cli
-from supervisor.cli import START_STAGES, _can_recover_qwen, _collection_runbooks, _completion_banner, _expand_task_range, _initial_document, _project_workspace, _qwen_session_to_resume, _recovered_qwen_event, _resume_stage, _run_collection_until_complete, _run_registered_collections, _run_summary, _should_skip_accepted_task
+from supervisor.cli import START_STAGES, _authoring_output_errors, _can_recover_qwen, _collection_runbooks, _completion_banner, _expand_task_range, _initial_document, _project_database_for_runbook, _project_workspace, _qwen_session_to_resume, _recovered_qwen_event, _reopen_invalid_authoring_tasks, _resume_stage, _retry_stage, _run_collection_until_complete, _run_registered_collections, _run_summary, _should_skip_accepted_task, _unmet_dependencies
 from supervisor.failure_summary import _deterministic_summary, summarize_failure
 from supervisor.models import NextStep, RunEvent, Status, Task, TaskRun, WorkerResult
 from supervisor.storage import RunStore
@@ -22,6 +22,23 @@ def test_resume_starts_at_the_saved_next_stage():
     assert "browser" in START_STAGES
 
 
+def test_collection_stops_before_relaunching_a_task_that_needs_user_review(tmp_path, capsys):
+    factory = tmp_path / "runbooks"
+    factory.mkdir()
+    (factory / "F001.md").write_text(
+        "---\ntask_id: F001\nsequence: 1\ntitle: Blocked\nbrowser_impact: not_applicable\nplaywright_spec:\n---\n\n## Objective\n\nBlocked.\n\n## Acceptance criteria\n\n- Blocked.\n",
+        encoding="utf-8",
+    )
+    database = tmp_path / ".state" / "supervisor.sqlite3"
+    store = RunStore(database)
+    store.claim_task("F001", "run-1", 999999)
+    store.finish_task(TaskRun(task=Task(task_id="F001", title="Blocked"), run_id="run-1", status=Status.NEEDS_USER_REVIEW, route="needs_user_review", worker_results=[]))
+    store.close()
+
+    assert _run_collection_until_complete(factory, False, False, database, "# Brief") is False
+    assert "COLLECTION BLOCKED · F001 requires user review" in capsys.readouterr().err
+
+
 def test_resume_restores_a_qwen_session_for_an_unfinished_task():
     assert _qwen_session_to_resume({"status": "interrupted", "agent_session_id": "qwen-session"}) == "qwen-session"
     assert _qwen_session_to_resume({"status": "accepted", "agent_session_id": "qwen-session"}) is None
@@ -34,6 +51,12 @@ def test_retry_reopens_an_accepted_task_for_verification(monkeypatch, tmp_path):
 
     assert _should_skip_accepted_task(state, False, tmp_path) is True
     assert _should_skip_accepted_task(state, True, tmp_path) is False
+
+
+def test_retry_uses_the_project_configured_primary_agent(monkeypatch):
+    monkeypatch.setenv("SUPERVISOR_CODING_AGENTS", "codex")
+
+    assert _retry_stage() == "codex"
 
 
 def test_valid_qwen_evidence_can_be_recovered_from_any_unfinished_state():
@@ -174,6 +197,36 @@ Task
     assert [path.stem for path in _collection_runbooks(tmp_path)] == ["F001", "F002"]
 
 
+def test_dependency_gate_waits_for_unaccepted_r_series_prerequisites(monkeypatch, tmp_path: Path):
+    r1, r2 = tmp_path / "R0001.md", tmp_path / "R0002.md"
+    r1.touch()
+    r2.touch()
+    monkeypatch.setattr(cli, "load_task", lambda path: Task(task_id=path.stem, title="Task", dependencies=[] if path.stem == "R0001" else ["R0001"]))
+
+    assert _unmet_dependencies([r1, r2], {"R0001": {"status": "accepted"}, "R0002": None}) == {}
+    assert _unmet_dependencies([r1, r2], {"R0001": None, "R0002": None}) == {"R0002": ["R0001"]}
+
+
+def test_invalid_accepted_authoring_task_is_reopened(tmp_path: Path):
+    workspace = tmp_path / "project"
+    authoring = workspace / "authoring-runbooks"
+    authoring.mkdir(parents=True)
+    b1 = authoring / "B0001.md"
+    b1.write_text(
+        "---\ntask_id: B0001\nsequence: 1\ntitle: Author\nbrowser_impact: not_applicable\nplaywright_spec:\n---\n\n## Objective\n\nWrite R0001.\n\n## Output list\n\n- `../runbooks/R0001.md`\n\n## Acceptance criteria\n\n- R0001 exists.\n",
+        encoding="utf-8",
+    )
+    database = workspace / ".state" / "authoring-runbooks.sqlite3"
+    store = RunStore(database)
+    store.claim_task("B0001", "run-1", 999999)
+    store.finish_task(TaskRun(task=Task(task_id="B0001", title="Author"), run_id="run-1", status=Status.PASS, route="accepted", worker_results=[]))
+    store.close()
+
+    assert _authoring_output_errors(b1) == ["missing R0001.md"]
+    assert _reopen_invalid_authoring_tasks([b1], {"B0001": {"status": "accepted"}}, database) == ["B0001"]
+    assert RunStore(database).state_for("B0001")["status"] == "interrupted"
+
+
 def test_initial_document_requires_and_loads_collection_context(tmp_path: Path):
     with pytest.raises(ValueError, match="INITIAL.md"):
         _initial_document(tmp_path)
@@ -244,7 +297,7 @@ def test_project_option_allows_a_targeted_recovery_stage(monkeypatch, tmp_path: 
     cli.main()
 
     state = RunStore(workspace / ".state" / "factory.sqlite3").state_for("F001")
-    assert state["status"] == "validating"
+    assert state["status"] == "needs_user_review"
 
 
 def test_interrupted_project_factory_resumes_the_first_unaccepted_task(monkeypatch, tmp_path: Path):
@@ -271,6 +324,19 @@ def test_initial_document_uses_a_generated_project_brief_when_no_local_initial_e
     (tmp_path / "PROJECT_BRIEF.md").write_text("# Project brief\n\nBuild a task app.\n", encoding="utf-8")
 
     assert "Build a task app." in _initial_document(generated_collection)
+
+
+def test_targeted_project_b_or_r_retry_uses_its_child_collection_database(tmp_path: Path):
+    workspace = tmp_path / "projects" / "task-app"
+    authoring = workspace / "authoring-runbooks" / "B0002.md"
+    product = workspace / "runbooks" / "R0002.md"
+    factory = workspace / ".state" / "factory.sqlite3"
+    authoring.parent.mkdir(parents=True)
+    product.parent.mkdir(parents=True)
+
+    assert _project_database_for_runbook(workspace, authoring, factory) == workspace / ".state" / "authoring-runbooks.sqlite3"
+    assert _project_database_for_runbook(workspace, product, factory) == workspace / ".state" / "runbooks.sqlite3"
+    assert _project_database_for_runbook(workspace, tmp_path / "runbooks" / "F001.md", factory) == factory
 
 
 def test_registered_collections_follow_explicit_children_recursively(tmp_path: Path, monkeypatch):

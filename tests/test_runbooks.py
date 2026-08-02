@@ -88,3 +88,24 @@ def test_r_series_asset_task_requires_stable_asset_ids(tmp_path):
 
     with pytest.raises(ValueError, match="has no asset_ids"):
         load_task(path)
+
+
+def test_r_series_dependencies_are_loaded_as_execution_gates(tmp_path):
+    path = tmp_path / "R0002.md"
+    path.write_text(
+        "---\ntask_id: R0002\nsequence: 2\ntitle: Dependency task\nbrowser_impact: not_applicable\nplaywright_spec:\ndependencies: R0001,R0003\nsource_specifications: specification/02-feature-model.md#loop\nsource_catalogue_ids: IMP-LOOP-002\nauthoring_batch: B0001\nfactory_stages: F002,F012,F013\nasset_impact: not_applicable\nasset_ids:\naudio_impact: not_applicable\naudio_ids:\naudio_brief:\naudio_duration_seconds: 0\naudio_loop: not_applicable\naudio_style_version:\n---\n\n## Objective\n\nDo the work.\n\n## Acceptance criteria\n\n- The work is done.\n",
+        encoding="utf-8",
+    )
+
+    assert load_task(path).dependencies == ["R0001", "R0003"]
+
+
+def test_r_series_dependencies_reject_invalid_ids(tmp_path):
+    path = tmp_path / "R0002.md"
+    path.write_text(
+        "---\ntask_id: R0002\nsequence: 2\ntitle: Invalid dependency\nbrowser_impact: not_applicable\nplaywright_spec:\ndependencies: R0001,not-a-task\nsource_specifications: specification/02-feature-model.md#loop\nsource_catalogue_ids: IMP-LOOP-002\nauthoring_batch: B0001\nfactory_stages: F002,F012,F013\nasset_impact: not_applicable\nasset_ids:\naudio_impact: not_applicable\naudio_ids:\naudio_brief:\naudio_duration_seconds: 0\naudio_loop: not_applicable\naudio_style_version:\n---\n\n## Objective\n\nDo the work.\n\n## Acceptance criteria\n\n- The work is done.\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="invalid dependencies"):
+        load_task(path)

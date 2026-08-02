@@ -152,7 +152,10 @@ class RunStore:
         self._connection.commit()
 
     def finish_task(self, run: TaskRun, accepted_commit: str | None = None) -> None:
-        status = "accepted" if run.status.value == "pass" else "validating"
+        # Preserve an explicit terminal review state.  Reclassifying every
+        # non-pass as ``validating`` makes a later collection invocation enter
+        # validation with no candidate result after an environment failure.
+        status = "accepted" if run.status.value == "pass" else run.status.value
         self._connection.execute(
             """UPDATE task_state SET status = ?, active_run_id = NULL, active_pid = NULL,
                next_action = CASE WHEN ? = 'accepted' THEN 'already_complete'
@@ -169,6 +172,21 @@ class RunStore:
                next_action = ?, continuation_summary = ?, updated_at = ?
                WHERE task_id = ? AND active_run_id = ?""",
             ("resume_from_checkpoint", reason, self._now(), task_id, run_id),
+        )
+        self._connection.commit()
+
+    def reopen_task(self, task_id: str, reason: str, next_action: str = "codex") -> None:
+        """Return an incorrectly accepted task to its repair stage.
+
+        This is deliberately explicit rather than silently treating bad output
+        as accepted: the prior run evidence remains intact for diagnosis.
+        """
+
+        self._connection.execute(
+            """UPDATE task_state SET status = 'interrupted', active_run_id = NULL, active_pid = NULL,
+               next_action = ?, continuation_summary = ?, accepted_commit = NULL, updated_at = ?
+               WHERE task_id = ?""",
+            (next_action, reason, self._now(), task_id),
         )
         self._connection.commit()
 

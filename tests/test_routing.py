@@ -67,7 +67,8 @@ def test_retry_budget_can_be_configured_per_project(monkeypatch):
     assert agent_limits()["codex"] == 4
 
 
-def test_environment_escalation_moves_through_configured_fallbacks():
-    assert next_route("qwen", result(Status.ENVIRONMENT_FAILURE), "qwen", {"qwen": 1}) == "openhands"
-    assert next_route("openhands", result(Status.ENVIRONMENT_FAILURE), "openhands", {"openhands": 1}) == "codex"
+def test_environment_failure_stops_before_retrying_an_unavailable_worker():
+    assert next_route("qwen", result(Status.ENVIRONMENT_FAILURE), "qwen", {"qwen": 1}) == "user_review"
+    assert next_route("openhands", result(Status.ENVIRONMENT_FAILURE), "openhands", {"openhands": 1}) == "user_review"
+    assert next_route("codex", result(Status.ENVIRONMENT_FAILURE), "codex", {"codex": 1}) == "user_review"
     assert next_route("browser", result(Status.ENVIRONMENT_FAILURE), "qwen", {"qwen": 1}) == "user_review"

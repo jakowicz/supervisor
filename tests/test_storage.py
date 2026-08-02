@@ -60,6 +60,7 @@ def test_non_passing_run_keeps_its_next_pipeline_stage(tmp_path: Path):
             route="needs_user_review", worker_results=[],
         )
         store.finish_task(run)
+        assert store.state_for("D006")["status"] == "needs_user_review"
         assert store.state_for("D006")["next_action"] == "test"
     finally:
         store.close()
