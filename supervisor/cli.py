@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from .graph import SupervisorConfig, create_graph
-from .environment import load_project_environment, project_path
+from .environment import execution_project_root, load_project_environment, project_path
 from .checkpoints import continuation_brief, diff_snapshot, stream_checkpoint, stream_delta
 from .failure_summary import summarize_failure
 from .models import RunEvent, Status, Task, TaskRun, WorkerResult, model_to_dict
@@ -107,7 +107,8 @@ given for that task explicitly.""",
     if sum(bool(value) for value in (arguments.retry, arguments.verify, arguments.start_on)) > 1:
         parser.error("Choose only one of --retry, --verify, or --start-on.")
     package_root = Path(__file__).resolve().parents[1]
-    project_root = load_project_environment(package_root)
+    project_root = execution_project_root(package_root)
+    project_root = load_project_environment(package_root, env_file=project_root / ".env")
     repo_root = project_path(os.getenv("SUPERVISOR_REPO_ROOT", "."), project_root)
     database_path = project_path(
         os.getenv("SUPERVISOR_DATABASE_PATH", ".state/supervisor.sqlite3"),
@@ -170,7 +171,7 @@ given for that task explicitly.""",
             database_path = project_workspace / ".state" / "factory.sqlite3"
             arguments.initial = project_workspace / "INITIAL.md"
         elif "SUPERVISOR_DATABASE_PATH" not in os.environ:
-            database_path = runbooks_directory.parent / ".supervisor" / "supervisor.sqlite3"
+            database_path = project_root / ".state" / "supervisor.sqlite3"
         initial_context = ""
         if arguments.run_all or arguments.run_initial:
             try:
@@ -182,7 +183,7 @@ given for that task explicitly.""",
                 runbooks_directory, arguments.dry_run, arguments.continue_on_nonpass, database_path, initial_context
             )
             if completed:
-                _run_registered_collections(runbooks_directory, arguments.dry_run, arguments.continue_on_nonpass, project_workspace)
+                _run_registered_collections(runbooks_directory, arguments.dry_run, arguments.continue_on_nonpass, project_workspace or project_root)
         else:
             _run_task_range(runbooks, arguments.dry_run, arguments.continue_on_nonpass, database_path, initial_context)
         return

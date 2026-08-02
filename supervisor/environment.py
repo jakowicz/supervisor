@@ -14,6 +14,17 @@ def project_root_for(package_root: Path) -> Path:
     return package_root.resolve().parent
 
 
+def execution_project_root(package_root: Path, start: Path | None = None) -> Path:
+    """Prefer the nearest project-owned Supervisor checkout over a global CLI."""
+
+    current = (start or Path.cwd()).expanduser().resolve()
+    for directory in (current, *current.parents):
+        checkout = directory / "supervisor"
+        if (checkout / "pyproject.toml").is_file() and (checkout / ".git").exists():
+            return directory
+    return project_root_for(package_root)
+
+
 def load_project_environment(
     package_root: Path, *, env_file: Path | None = None, override: bool = False
 ) -> Path:
