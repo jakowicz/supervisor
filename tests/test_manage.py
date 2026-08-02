@@ -108,6 +108,13 @@ def test_game_target_requirement_options_include_rpg_and_console_needs():
     assert "Touch controls and orientation rules" not in options
 
 
+def test_game_target_requirements_are_derived_without_an_extra_prompt():
+    requirements = manage._game_target_requirements("Windows", ["Real-time action, platformer, or combat game"])
+
+    assert "- Keyboard, mouse, and gamepad support" in requirements
+    assert "- Stable frame-time and input-latency target" in requirements
+
+
 def test_selected_bullets_combines_presets_and_optional_detail(monkeypatch):
     monkeypatch.setattr(manage, "_choose_many", lambda *_args: ["Accessible controls"])
     monkeypatch.setattr("builtins.input", lambda _prompt: "Custom requirement")

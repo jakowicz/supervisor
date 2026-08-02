@@ -185,16 +185,22 @@ GAME_TARGET_FAMILIES = (
     ("Console game", ("PlayStation", "Xbox", "Nintendo Switch", "PC game storefronts (Steam, Epic Games Store, GOG, itch.io)")),
     ("Spatial game", ("Meta Quest / virtual reality", "Augmented or mixed reality")),
 )
-GAME_CHARACTERISTICS = (
+GAME_PRESENTATIONS = (
     "2D presentation",
     "3D presentation",
+    "Hybrid 2D and 3D presentation",
+)
+GAME_PLAYER_MODES = (
+    "Single-player game",
+    "Multiplayer game",
+    "Single-player and multiplayer game",
+)
+GAME_GENRES = (
     "Role-playing game (RPG)",
     "Real-time action, platformer, or combat game",
     "Strategy, simulation, or management game",
     "Puzzle, card, board, or turn-based game",
     "Narrative or visual-novel game",
-    "Multiplayer or social game",
-    "Single-player offline game",
 )
 GAME_AUDIENCES = ("Casual players", "Core/hobby players", "Children and families", "Teen players", "Adult players", "Accessibility-first players")
 GAME_PRIMARY_OUTCOMES = ("Play a satisfying core game loop", "Progress through a story or campaign", "Compete with other players", "Create, collect, or customise", "Relax with short repeatable sessions")
@@ -436,21 +442,15 @@ def _game_target_requirement_options(target: str, characteristics: list[str]) ->
         options.extend(("Long-session save, checkpoint, and recovery rules", "Readable dialogue, inventory, quest, and progression UI"))
     if "Real-time action, platformer, or combat game" in characteristics:
         options.extend(("Stable frame-time and input-latency target", "Control remapping and difficulty/accessibility assists"))
-    if "Multiplayer or social game" in characteristics:
+    if "Multiplayer game" in characteristics or "Single-player and multiplayer game" in characteristics:
         options.extend(("Online identity, matchmaking, moderation, and reporting requirements", "Network-loss, reconnection, and multiplayer state-recovery behaviour"))
     return tuple(dict.fromkeys(options))
 
 
 def _game_target_requirements(target: str, characteristics: list[str]) -> str:
-    selected = _choose_many(
-        f"Select requirements for {target}",
-        _game_target_requirement_options(target, characteristics),
-    )
-    extra = _prompt(f"Other requirements for {target}", "None recorded.")
-    lines = [f"- {requirement}" for requirement in selected]
-    if extra != "None recorded.":
-        lines.append(f"- Other: {extra}")
-    return "\n".join(lines) or "- No target-specific requirements selected yet."
+    """Derive baseline requirements from the selected game format and targets."""
+
+    return "\n".join(f"- {requirement}" for requirement in _game_target_requirement_options(target, characteristics))
 
 
 def _render_initial_brief(values: dict[str, str], targets: list[str], target_details: dict[str, str]) -> str:
@@ -550,7 +550,15 @@ def create_initial_brief(path: Path, *, project_name: str, force: bool = False) 
     target_family, compatible_targets = _choose_target_family(category)
     additional_targets = _choose_many("Select every target in this compatible profile that you want to support", compatible_targets)
     targets = [*DEFAULT_WEB_TARGETS, *additional_targets]
-    game_characteristics = _choose_many("Select the game characteristics that apply", GAME_CHARACTERISTICS) if category == "Game" else []
+    game_characteristics = (
+        [
+            _choose_one_with_example("Choose the visual presentation", GAME_PRESENTATIONS, example="2D presentation."),
+            _choose_one_with_example("Choose the player mode", GAME_PLAYER_MODES, example="Single-player game."),
+            _choose_one_with_example("Choose the primary game genre", GAME_GENRES, example="Role-playing game (RPG)."),
+        ]
+        if category == "Game"
+        else []
+    )
     target_details = (
         {target: _game_target_requirements(target, game_characteristics) for target in targets}
         if category == "Game"
