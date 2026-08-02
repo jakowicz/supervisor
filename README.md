@@ -505,6 +505,22 @@ Bundled adapters and common stages such as `codex`, `test`, `browser`,
 configured; they are not a universal required pipeline. Use the `.env` for the
 actual project contract and `supervisor configure` to edit it interactively.
 
+For a non-passing run, Supervisor sends the final failed stage's bounded local
+evidence to the configured local Ollama summariser (Gemma 4 12B by default).
+Its concise failure list and next action print in the final terminal output and
+are stored in the Markdown report. Set `SUPERVISOR_FAILURE_SUMMARY_ENABLED=false`
+to use only the deterministic local fallback extractor.
+
+Use a targeted validation start when implementation already exists:
+
+```bash
+supervisor-run --task-id D012 --start-on test
+supervisor-run --task-id D012 --start-on browser
+```
+
+`--start-on` skips earlier stages but retains the normal downstream gates; it
+is mutually exclusive with `--retry` and `--verify`.
+
 ### Optional local asset lane
 
 Runbooks can explicitly opt into a local original-art lane without changing

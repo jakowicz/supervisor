@@ -388,6 +388,17 @@ For browser-impacting work, create or update a task-specific Playwright spec in
 `supervisor/browser/tests/changes/`, list it in `browser_coverage`,
 and revise stale checks. Keep `tests/smoke/` short and stable. For domain-only
 work, explain in `browser_coverage` why no task-specific browser spec changed.
+
+Visual baseline rule:
+- When the continuation evidence names a golden, snapshot, or visual-regression
+  failure, inspect the supplied master/test/diff artifacts before changing any
+  baseline. Work out whether the new render is the intended result of this
+  task, and check that it has no clipping, overlap, or lost meaning.
+- If it is intentional, regenerate only the affected approved baselines using
+  the repository's documented command, update stale visual/browser checks when
+  their prior expectation is no longer correct, and rerun the relevant suite.
+- If it is not intentional, fix the product or test setup instead. Never mask
+  a real visual regression by blindly accepting a changed screenshot.
 """
 
 

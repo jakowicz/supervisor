@@ -1,5 +1,5 @@
 {
-  "schema_version": 4,
+  "schema_version": 5,
   "migrations": [
     {
       "version": 1,
@@ -52,6 +52,17 @@
         "ART_NEGATIVE_PROMPT": "copied commercial game art, trademark, logo, watermark, text, UI screenshot, blurry, duplicate object",
         "ART_PROTECTED_IP_TERMS": "",
         "APP_TIME_OBSERVATION_KEY": "flutter.project.time_observation"
+      },
+      "rename": {}
+    },
+    {
+      "version": 5,
+      "description": "add local end-of-run failure summaries",
+      "add": {
+        "SUPERVISOR_FAILURE_SUMMARY_ENABLED": "true",
+        "SUPERVISOR_FAILURE_SUMMARY_MODEL": "gemma4:12b",
+        "SUPERVISOR_FAILURE_SUMMARY_TIMEOUT_SECONDS": "180",
+        "SUPERVISOR_FAILURE_SUMMARY_KEEP_ALIVE": "0"
       },
       "rename": {}
     }

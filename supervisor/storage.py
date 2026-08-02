@@ -228,6 +228,9 @@ class RunStore:
                 f"- {event.agent} · attempt {event.attempt} · {event.status.value} → "
                 f"{event.route}: {event.summary}"
             )
+        failure_digest = next((note for note in reversed(run.notes) if note.startswith("Failure digest:")), "")
+        if failure_digest:
+            lines.extend(["", "## Failure digest", "", failure_digest, ""])
         lines.extend([
             "",
             "The detailed event payloads, test/browser logs, and evidence paths are in `.state/supervisor.sqlite3`.",

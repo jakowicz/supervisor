@@ -29,6 +29,31 @@ def _configured_commands() -> list[list[str]] | None:
     return [shlex.split(configured_command)] if configured_command else None
 
 
+def _golden_artifacts(repo_root: Path) -> list[str]:
+    """Surface comparator artifacts so a repair agent can inspect before updating.
+
+    Flutter writes these only after a golden mismatch.  Keeping this discovery
+    framework-neutral means projects using another test runner are unaffected.
+    """
+
+    failures = repo_root / "test" / "golden" / "failures"
+    if not failures.is_dir():
+        return []
+    patterns = ("*_masterImage.png", "*_testImage.png", "*_maskedDiff.png")
+    return [str(path.relative_to(repo_root)) for pattern in patterns for path in sorted(failures.glob(pattern))]
+
+
+def _golden_artifact_note(repo_root: Path) -> tuple[str, list[str]]:
+    artifacts = _golden_artifacts(repo_root)
+    if not artifacts:
+        return "", []
+    return (
+        "\n\n===== Golden visual diff artifacts (inspect before updating any baseline) =====\n"
+        + "\n".join(artifacts),
+        artifacts,
+    )
+
+
 def run(task: Task, repo_root: Path, dry_run: bool = False) -> WorkerResult:
     if dry_run:
         return WorkerResult(status=Status.PASS, summary="Dry-run test worker passed.", recommended_next_step=NextStep.COMPLETE)
@@ -52,11 +77,12 @@ def run(task: Task, repo_root: Path, dry_run: bool = False) -> WorkerResult:
         output = "$ " + " ".join(command) + "\n" + completed.stdout + completed.stderr
         logs.append(output)
         if completed.returncode != 0:
+            golden_note, golden_artifacts = _golden_artifact_note(repo_root)
             return WorkerResult(
                 status=Status.REPAIRABLE_FAILURE,
                 summary=f"Independent test worker failed: {' '.join(command)}",
-                test_result=output,
-                evidence=Evidence(test_log="\n".join(logs)),
+                test_result=output + golden_note,
+                evidence=Evidence(test_log="\n".join(logs) + golden_note, screenshots=golden_artifacts),
                 recommended_next_step=NextStep.RETRY_QWEN,
             )
     return WorkerResult(

@@ -27,3 +27,23 @@ def test_tester_requires_a_project_validation_contract(monkeypatch, tmp_path):
 
     assert result.status is Status.ENVIRONMENT_FAILURE
     assert "SUPERVISOR_TEST_COMMANDS" in result.summary
+
+
+def test_tester_attaches_golden_diff_artifacts_to_a_failed_check(monkeypatch, tmp_path):
+    failures = tmp_path / "test" / "golden" / "failures"
+    failures.mkdir(parents=True)
+    for suffix in ("masterImage", "testImage", "maskedDiff"):
+        (failures / f"settings_standard_default_{suffix}.png").write_bytes(b"png")
+
+    monkeypatch.setenv("SUPERVISOR_TEST_COMMANDS", '["flutter test"]')
+    monkeypatch.setattr(
+        "supervisor.workers.tester.subprocess.run",
+        lambda *_args, **_kwargs: SimpleNamespace(returncode=1, stdout="golden mismatch", stderr=""),
+    )
+
+    result = run(Task(task_id="D012", title="Typography"), tmp_path)
+
+    assert result.status is Status.REPAIRABLE_FAILURE
+    assert "Golden visual diff artifacts" in result.test_result
+    assert "settings_standard_default_masterImage.png" in result.test_result
+    assert len(result.evidence.screenshots) == 3

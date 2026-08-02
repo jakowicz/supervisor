@@ -5,7 +5,8 @@ import pytest
 from pathlib import Path
 
 from supervisor import cli
-from supervisor.cli import _can_recover_qwen, _collection_runbooks, _completion_banner, _expand_task_range, _initial_document, _project_workspace, _qwen_session_to_resume, _recovered_qwen_event, _resume_stage, _run_collection_until_complete, _run_registered_collections, _run_summary, _should_skip_accepted_task
+from supervisor.cli import START_STAGES, _can_recover_qwen, _collection_runbooks, _completion_banner, _expand_task_range, _initial_document, _project_workspace, _qwen_session_to_resume, _recovered_qwen_event, _resume_stage, _run_collection_until_complete, _run_registered_collections, _run_summary, _should_skip_accepted_task
+from supervisor.failure_summary import _deterministic_summary, summarize_failure
 from supervisor.models import NextStep, RunEvent, Status, Task, TaskRun, WorkerResult
 from supervisor.storage import RunStore
 
@@ -16,6 +17,9 @@ def test_resume_starts_at_the_saved_next_stage():
     assert _resume_stage({"status": "validating", "next_action": "browser"}) == "browser"
     assert _resume_stage({"status": "accepted", "next_action": "qwen"}) == "prepare"
     assert _resume_stage({"status": "interrupted", "next_action": "unexpected"}) == "prepare"
+    assert _resume_stage({"status": "validating", "next_action": "asset_qa"}) == "asset_qa"
+    assert "test" in START_STAGES
+    assert "browser" in START_STAGES
 
 
 def test_resume_restores_a_qwen_session_for_an_unfinished_task():
@@ -98,6 +102,43 @@ def test_completion_banner_marks_non_pass_runs_as_not_accepted():
     )
 
     assert _completion_banner(run).startswith("NOT ACCEPTED — USER REVIEW REQUIRED")
+
+
+def test_failure_digest_extracts_concrete_test_failure_without_a_model(monkeypatch):
+    result = WorkerResult(
+        status=Status.REPAIRABLE_FAILURE,
+        summary="Independent test worker failed: flutter test",
+        test_result='Golden "goldens/settings.png": Pixel test failed, 9.34% diff detected.',
+        recommended_next_step=NextStep.RETRY_QWEN,
+    )
+    run = TaskRun(
+        run_id="run-failure",
+        task=Task(task_id="D012", title="Typography"),
+        status=Status.NEEDS_USER_REVIEW,
+        route="needs_user_review",
+        worker_results=[result],
+        events=[RunEvent(stage="test", agent="tester", model="shell", attempt=1, status=result.status, summary=result.summary, route="user_review", result=result)],
+    )
+    monkeypatch.setenv("SUPERVISOR_FAILURE_SUMMARY_ENABLED", "false")
+
+    digest = summarize_failure(run)
+
+    assert "Golden" in digest
+    assert "9.34%" in digest
+    assert "deterministic fallback" in digest
+
+
+def test_run_summary_prints_stored_failure_digest(tmp_path):
+    run = TaskRun(
+        run_id="run-digest",
+        task=Task(task_id="D012", title="Typography"),
+        status=Status.NEEDS_USER_REVIEW,
+        route="needs_user_review",
+        worker_results=[],
+        notes=["Failure digest:\n- Golden image changed\nNext action: review and update approved baseline."],
+    )
+
+    assert "Golden image changed" in _run_summary(run, tmp_path / "supervisor.sqlite3")
 
 
 def test_task_range_expands_inclusive_zero_padded_task_ids():

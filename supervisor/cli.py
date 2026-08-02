@@ -16,11 +16,19 @@ from dotenv import load_dotenv
 
 from .graph import SupervisorConfig, create_graph
 from .checkpoints import continuation_brief, diff_snapshot, stream_checkpoint, stream_delta
+from .failure_summary import summarize_failure
 from .models import RunEvent, Status, Task, TaskRun, WorkerResult, model_to_dict
 from .observability import SupervisorTelemetry
 from .recovery import latest_qwen_result, qwen_logs
 from .runbooks import load_task
 from .storage import RunStore
+
+
+START_STAGES = (
+    "prepare", "art_director", "asset_generator", "asset_finisher", "asset_qa",
+    "qwen", "openhands", "codex", "precheck", "codex_final", "test", "browser",
+    "visual_review", "completion_audit", "git_publish",
+)
 
 
 def main() -> None:
@@ -83,6 +91,11 @@ given for that task explicitly.""",
         help="Re-run independent verification from Codex final review without repeating the primary implementation agent.",
     )
     parser.add_argument(
+        "--start-on",
+        choices=START_STAGES,
+        help="Start at one named stage, skipping earlier stages and preserving normal downstream gates; useful for focused validation such as --start-on test.",
+    )
+    parser.add_argument(
         "--output-format",
         choices=["summary", "json"],
         default="summary",
@@ -92,8 +105,8 @@ given for that task explicitly.""",
         parser.print_help()
         return
     arguments = parser.parse_args()
-    if arguments.retry and arguments.verify:
-        parser.error("Choose either --retry (reimplement) or --verify (revalidate), not both.")
+    if sum(bool(value) for value in (arguments.retry, arguments.verify, arguments.start_on)) > 1:
+        parser.error("Choose only one of --retry, --verify, or --start-on.")
     load_dotenv()
     package_root = Path(__file__).resolve().parents[1]
     repo_root = Path(os.getenv("SUPERVISOR_REPO_ROOT", package_root.parents[1])).resolve()
@@ -112,7 +125,7 @@ given for that task explicitly.""",
     if batch_modes:
         if batch_modes > 1:
             parser.error("Choose only one of --task-range, --run-all, or --run-initial.")
-        if any((arguments.task_id, arguments.runbook, arguments.title, arguments.objective, arguments.acceptance)):
+        if any((arguments.task_id, arguments.runbook, arguments.title, arguments.objective, arguments.acceptance, arguments.start_on)):
             parser.error("Batch modes cannot be combined with a single-task runbook or ad-hoc task options.")
         if arguments.initial and not (arguments.run_all or arguments.run_initial):
             parser.error("--initial can be used only with --run-all or --run-initial.")
@@ -190,7 +203,7 @@ given for that task explicitly.""",
     # caller can intentionally make a new task/runbook when scope changes;
     # blindly sending an already accepted task back to a slow coding model is
     # both wasteful and risky.
-    if _should_skip_accepted_task(previous_state, arguments.retry or arguments.verify, repo_root):
+    if _should_skip_accepted_task(previous_state, arguments.retry or arguments.verify or arguments.start_on, repo_root):
         accepted_commit = previous_state.get("accepted_commit")
         if accepted_commit and _commit_exists(repo_root, accepted_commit):
             print(
@@ -337,6 +350,11 @@ given for that task explicitly.""",
         recovered_result, recovered_path = recovered_qwen
         progress(f"RECOVER qwen · parsed prior {recovered_result.status.value} result from {recovered_path.name}")
     progress(f"LOG   {live_log_path}")
+    if arguments.start_on:
+        progress(
+            f"START-ON {arguments.start_on} · earlier stages intentionally skipped; "
+            "normal downstream gates remain enabled"
+        )
     heartbeat_seconds = int(os.getenv("SUPERVISOR_PROGRESS_HEARTBEAT_SECONDS", "30"))
     telemetry = SupervisorTelemetry.from_environment()
     final_state: dict | None = None
@@ -349,7 +367,7 @@ given for that task explicitly.""",
     initial_events = [recovered_event] if recovered_event else []
     initial_results = [recovered_result] if recovered_event else []
     initial_attempts = {"qwen": 1} if recovered_event else {}
-    resume_stage = "qwen" if arguments.retry else ("codex_final" if arguments.verify or recovered_event else _resume_stage(previous_state))
+    resume_stage = arguments.start_on or ("qwen" if arguments.retry else ("codex_final" if arguments.verify or recovered_event else _resume_stage(previous_state)))
     try:
         with telemetry.run(task, run_id, run_number) as run_span:
             final_state = create_graph(SupervisorConfig(repo_root=repo_root, dry_run=arguments.dry_run, progress=progress, event_log=event_log, stage_log_path=stage_log_path, checkpoint=checkpoint, progress_heartbeat_seconds=heartbeat_seconds, telemetry=telemetry)).invoke({"task": task, "run_id": run_id, "worker_results": initial_results, "events": initial_events, "attempts": initial_attempts, "active_agent": "qwen", "notes": ["Recovered prior Qwen result; starting independent validation."] if recovered_event else [], "resume_stage": resume_stage})
@@ -371,6 +389,8 @@ given for that task explicitly.""",
         events=final_state["events"],
         notes=final_state["notes"],
     )
+    if run.status is not Status.PASS:
+        run.notes.append("Failure digest:\n" + summarize_failure(run))
     try:
         store.save(run)
         store.finish_task(run, _head_commit(repo_root) if run.status is Status.PASS else None)
@@ -424,6 +444,9 @@ def _run_summary(run: TaskRun, database_path: Path) -> str:
         f"- {event.stage} ({event.agent}) · {event.status.value} → {event.route} · {event.summary}"
         for event in run.events
     )
+    failure_digest = next((note for note in reversed(run.notes) if note.startswith("Failure digest:")), "")
+    if failure_digest:
+        lines.extend(["", failure_digest])
     lines.extend([
         f"Report: {report_path}",
         f"Evidence: {database_path}",
@@ -498,7 +521,7 @@ def _resume_stage(state: dict | None) -> str:
         return "prepare"
     candidate = str(state.get("next_action", "prepare"))
     return candidate if candidate in {
-        "prepare", "qwen", "openhands", "codex", "codex_final", "precheck", "test", "browser",
+        "prepare", "art_director", "asset_generator", "asset_finisher", "asset_qa", "qwen", "openhands", "codex", "codex_final", "precheck", "test", "browser",
         "visual_review", "completion_audit", "git_publish", "user_review",
     } else "prepare"
 

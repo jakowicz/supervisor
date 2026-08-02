@@ -72,6 +72,10 @@ DEFAULTS = {
     "ART_NEGATIVE_PROMPT": "copied commercial game art, trademark, logo, watermark, text, UI screenshot, blurry, duplicate object",
     "ART_PROTECTED_IP_TERMS": "",
     "APP_TIME_OBSERVATION_KEY": "flutter.project.time_observation",
+    "SUPERVISOR_FAILURE_SUMMARY_ENABLED": "true",
+    "SUPERVISOR_FAILURE_SUMMARY_MODEL": "gemma4:12b",
+    "SUPERVISOR_FAILURE_SUMMARY_TIMEOUT_SECONDS": "180",
+    "SUPERVISOR_FAILURE_SUMMARY_KEEP_ALIVE": "0",
 }
 
 DEFAULT_SUPERVISOR_URL = "git@github.com:jakowicz/supervisor.git"
