@@ -357,8 +357,9 @@ Efficient investigation rules (especially important for local models):
 {completion_protocol}
 
 Your final WorkerResult must include all of the following:
-- `acceptance_results`: one entry for every task acceptance criterion, with
-  pass/fail/not_verified status and concrete evidence;
+- `acceptance_results`: one entry for every task acceptance criterion, in the
+  same order. Copy each criterion text verbatim from the task, with pass/fail/
+  not_verified status and concrete evidence;
 - `documentation`: README/plan/ADR/runbook files reviewed, files updated, and
   why they were or were not changed;
 - `test_result`: exact checks you ran and their outcomes;

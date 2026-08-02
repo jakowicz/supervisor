@@ -73,6 +73,11 @@ given for that task explicitly.""",
         help="Reopen a task at the primary Qwen stage while preserving its worktree and durable history; use this to re-verify an accepted task.",
     )
     parser.add_argument(
+        "--verify",
+        action="store_true",
+        help="Re-run independent verification from Codex final review without repeating the primary implementation agent.",
+    )
+    parser.add_argument(
         "--output-format",
         choices=["summary", "json"],
         default="summary",
@@ -82,6 +87,8 @@ given for that task explicitly.""",
         parser.print_help()
         return
     arguments = parser.parse_args()
+    if arguments.retry and arguments.verify:
+        parser.error("Choose either --retry (reimplement) or --verify (revalidate), not both.")
     load_dotenv()
     package_root = Path(__file__).resolve().parents[1]
     repo_root = Path(os.getenv("SUPERVISOR_REPO_ROOT", package_root.parents[1])).resolve()
@@ -157,7 +164,7 @@ given for that task explicitly.""",
     # caller can intentionally make a new task/runbook when scope changes;
     # blindly sending an already accepted task back to a slow coding model is
     # both wasteful and risky.
-    if _should_skip_accepted_task(previous_state, arguments.retry, repo_root):
+    if _should_skip_accepted_task(previous_state, arguments.retry or arguments.verify, repo_root):
         accepted_commit = previous_state.get("accepted_commit")
         if accepted_commit and _commit_exists(repo_root, accepted_commit):
             print(
@@ -169,7 +176,7 @@ given for that task explicitly.""",
             return
     run_id = str(uuid.uuid4())
     previous_state = store.claim_task(task.task_id, run_id, os.getpid())
-    previous_qwen_session = None if arguments.retry else _qwen_session_to_resume(previous_state)
+    previous_qwen_session = None if arguments.retry or arguments.verify else _qwen_session_to_resume(previous_state)
     if previous_qwen_session:
         # The session identifier is persisted at every Qwen stream checkpoint.
         # Restoring it here lets a fresh supervisor invocation continue the
@@ -187,9 +194,9 @@ given for that task explicitly.""",
     )
     live_log_path.parent.mkdir(parents=True, exist_ok=True)
     recovered_qwen = None
-    if not arguments.retry and _can_recover_qwen(previous_state):
+    if not arguments.retry and not arguments.verify and _can_recover_qwen(previous_state):
         recovered_qwen = latest_qwen_result(database_path.parent / "live", task.task_id)
-    if recovered_qwen and not arguments.retry:
+    if recovered_qwen and not arguments.retry and not arguments.verify:
         newest_qwen_log = qwen_logs(database_path.parent / "live", task.task_id)[0]
         handoff = (
             "Recovery evidence: a completed Qwen result was recovered from "
@@ -316,7 +323,7 @@ given for that task explicitly.""",
     initial_events = [recovered_event] if recovered_event else []
     initial_results = [recovered_result] if recovered_event else []
     initial_attempts = {"qwen": 1} if recovered_event else {}
-    resume_stage = "qwen" if arguments.retry else ("codex_final" if recovered_event else _resume_stage(previous_state))
+    resume_stage = "qwen" if arguments.retry else ("codex_final" if arguments.verify or recovered_event else _resume_stage(previous_state))
     try:
         with telemetry.run(task, run_id, run_number) as run_span:
             final_state = create_graph(SupervisorConfig(repo_root=repo_root, dry_run=arguments.dry_run, progress=progress, event_log=event_log, stage_log_path=stage_log_path, checkpoint=checkpoint, progress_heartbeat_seconds=heartbeat_seconds, telemetry=telemetry)).invoke({"task": task, "run_id": run_id, "worker_results": initial_results, "events": initial_events, "attempts": initial_attempts, "active_agent": "qwen", "notes": ["Recovered prior Qwen result; starting independent validation."] if recovered_event else [], "resume_stage": resume_stage})

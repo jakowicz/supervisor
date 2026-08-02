@@ -21,3 +21,20 @@ def test_audit_accepts_complete_report():
         recommended_next_step=NextStep.COMPLETE,
     )
     assert audit(task, [coding_event(result)]).status is Status.PASS
+
+
+def test_audit_accepts_ordered_rephrased_results_for_long_criteria():
+    task = Task(task_id="T01", title="Test", acceptance_criteria=["A very long criterion", "Another long criterion"])
+    result = WorkerResult(
+        status=Status.PASS,
+        summary="done",
+        test_result="flutter test passed",
+        acceptance_results=[
+            AcceptanceResult(criterion="A concise restatement", status=CriterionStatus.PASS, evidence="A"),
+            AcceptanceResult(criterion="Another concise restatement", status=CriterionStatus.PASS, evidence="B"),
+        ],
+        documentation=DocumentationReport(reviewed_files=["README.md"], summary="Reviewed."),
+        recommended_next_step=NextStep.COMPLETE,
+    )
+
+    assert audit(task, [coding_event(result)]).status is Status.PASS

@@ -22,3 +22,15 @@ def test_every_installed_runbook_loads_and_matches_its_filename():
             assert task.playwright_specs
         else:
             assert not task.playwright_specs
+
+
+def test_wrapped_acceptance_bullets_are_loaded_in_full():
+    root = Path(__file__).resolve().parents[2]
+    task = load_task(root / "runbooks" / "D011.md")
+
+    assert task.acceptance_criteria[0].endswith(
+        "raw presentation colour literals are introduced outside palette/theme code."
+    )
+    assert task.acceptance_criteria[-1] == (
+        "Only this semantic-colour slice, its tests, and its browser evidence are committed."
+    )

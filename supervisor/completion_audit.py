@@ -14,8 +14,22 @@ def audit(task: Task, events: list) -> WorkerResult:
         return WorkerResult(status=Status.REPAIRABLE_FAILURE, summary="No coding-agent completion report exists.", recommended_next_step=NextStep.RETRY_QWEN)
     result = coding_events[-1].result
     reported = {item.criterion: item for item in result.acceptance_results}
-    missing = [criterion for criterion in task.acceptance_criteria if criterion not in reported]
-    unverified = [item.criterion for item in reported.values() if item.status.value != "pass"]
+    exact_results = [reported.get(criterion) for criterion in task.acceptance_criteria]
+    if all(exact_results):
+        matched_results = exact_results
+    elif len(result.acceptance_results) == len(task.acceptance_criteria):
+        # Local models frequently preserve the required order but restate a
+        # long Markdown bullet. The prompt requires one result per criterion;
+        # accept that ordered contract while retaining the original evidence.
+        matched_results = result.acceptance_results
+    else:
+        matched_results = exact_results
+    missing = [
+        criterion
+        for criterion, item in zip(task.acceptance_criteria, matched_results)
+        if item is None
+    ]
+    unverified = [item.criterion for item in matched_results if item is not None and item.status.value != "pass"]
     docs_reviewed = result.documentation.reviewed_files
     problems: list[str] = []
     if missing:

@@ -32,7 +32,19 @@ def load_task(path: Path) -> Task:
     missing = required - metadata.keys()
     if missing:
         raise ValueError(f"{path} is missing metadata: {', '.join(sorted(missing))}")
-    criteria = [line[2:].strip() for line in _section(document, "Acceptance criteria").splitlines() if line.startswith("- ")]
+    criteria: list[str] = []
+    current: list[str] = []
+    for line in _section(document, "Acceptance criteria").splitlines():
+        if line.startswith("- "):
+            if current:
+                criteria.append(" ".join(current))
+            current = [line[2:].strip()]
+        elif current and line.strip():
+            # Markdown permits a hanging indent for a long bullet. Preserve
+            # the entire criterion so it remains a precise worker contract.
+            current.append(line.strip())
+    if current:
+        criteria.append(" ".join(current))
     if not criteria:
         raise ValueError(f"{path} has no acceptance criteria.")
     return Task(
