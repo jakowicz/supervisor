@@ -2,7 +2,7 @@
 
 This package orchestrates one small, reviewable runbook task at a time. It
 does not impose an application stack, model provider, or QA workflow. Each
-project's ignored root `.env` is the source of truth for its repository
+project's versioned root `.env` is the source of truth for its repository
 path, enabled agents, execution order, worker commands, validation commands,
 timeouts, publishing policy, observability, and platform-specific tooling.
 Supervisor provides evidence-gated orchestration around that project contract.
@@ -124,14 +124,15 @@ python3.11 -m venv .venv
 source .venv/bin/activate
 pip install -e '.[dev]'
 cp .env.example ../.env
+cp .secrets.env.example ../.secrets.env
 ```
 
 ### Start a new project
 
 From any existing supervisor installation, create an empty project with the
 supervisor checked out as a `supervisor/` Git submodule, a root `runbooks/`
-directory, a starter runbook, a root `.state/` ignore rule, an ignored local
-configuration file, and an installed virtual environment:
+directory, a starter runbook, versioned configuration, a private ignored
+`.secrets.env` credential file, and an installed virtual environment:
 
 ```zsh
 supervisor init
@@ -166,9 +167,10 @@ editable install:
 supervisor configure
 ```
 
-It writes an ignored, mode-600 project-root `.env` and prompts for project paths, enabled
-agents and their commands/models, total retry attempts, dashboard preference,
-Git policy, timeouts, and optional Langfuse credentials. The dashboard chooses
+It writes versioned project-root `.env` configuration and keeps credentials in
+ignored, mode-600 `.secrets.env`; it prompts for project paths, enabled agents
+and their commands/models, total retry attempts, dashboard preference, Git
+policy, timeouts, and optional Langfuse credentials. The dashboard chooses
 a free localhost port when its preferred port is occupied. When installed as
 `supervisor`, the default database path is
 `<project-root>/.state/supervisor.sqlite3`, so project evidence remains outside
@@ -235,8 +237,9 @@ To use the locally loaded Ollama model for both Qwen and OpenHands, set:
 QWEN_MODEL=qwen3-coder-next:latest
 LLM_MODEL=ollama/qwen3-coder-next:latest
 LLM_BASE_URL=http://127.0.0.1:11434/v1
-LLM_API_KEY=ollama
 ```
+
+Put `LLM_API_KEY=ollama` in `.secrets.env` instead.
 
 The same shared `/v1` URL is correct: Qwen uses the OpenAI-compatible endpoint,
 while the OpenHands adapter automatically removes that suffix for LiteLLM's native

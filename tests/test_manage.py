@@ -63,11 +63,12 @@ def test_initial_art_direction_updates_only_art_values_in_project_env(monkeypatc
     (checkout / ".git").mkdir()
     config = tmp_path / "projects" / "moonlit" / ".env"
     config.parent.mkdir(parents=True)
-    config.write_text("LANGFUSE_SECRET_KEY=secret\nART_STYLE_NAME=old\n", encoding="utf-8")
+    config.write_text("ART_STYLE_NAME=old\n", encoding="utf-8")
+    config.with_name(".secrets.env").write_text("LANGFUSE_SECRET_KEY=secret\n", encoding="utf-8")
     recorded = manage._record_initial_art_direction(config.parent, "moonlit", "cool moonlit science-fiction, clean geometric shapes")
 
     updated = config.read_text(encoding="utf-8")
-    assert "LANGFUSE_SECRET_KEY=secret" in updated
+    assert "LANGFUSE_SECRET_KEY=secret" in config.with_name(".secrets.env").read_text(encoding="utf-8")
     assert "ART_DIRECTION_MODE=user_provided" in updated
     assert "ART_DIRECTION_BRIEF=cool moonlit science-fiction, clean geometric shapes" in updated
     assert "ART_PRODUCT_SLUG=moonlit" in updated
@@ -268,6 +269,7 @@ def test_initialise_project_scaffolds_a_safe_empty_project(monkeypatch, tmp_path
             supervisor_root = cwd / "supervisor"
             supervisor_root.mkdir()
             (supervisor_root / ".env.example").write_text("SUPERVISOR_REPO_ROOT=.\n", encoding="utf-8")
+            (supervisor_root / ".secrets.env.example").write_text("# secret\n", encoding="utf-8")
 
     monkeypatch.setattr(manage, "_run", fake_run)
     project = tmp_path / "new-project"
@@ -278,7 +280,8 @@ def test_initialise_project_scaffolds_a_safe_empty_project(monkeypatch, tmp_path
         (["git", "init"], project),
         (["git", "submodule", "add", "https://example.test/supervisor.git", "supervisor"], project),
     ]
-    assert (project / ".gitignore").read_text(encoding="utf-8") == "/.state/\n/.env\n"
+    assert (project / ".gitignore").read_text(encoding="utf-8") == "/.secrets.env\n"
+    assert (project / ".secrets.env.example").is_file()
     assert (project / "runbooks" / "TEMPLATE.md").read_text(encoding="utf-8") == manage.RUNBOOK_TEMPLATE
     config = (project / ".env").read_text(encoding="utf-8")
     assert "SUPERVISOR_REPO_ROOT=." in config

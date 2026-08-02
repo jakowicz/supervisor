@@ -22,6 +22,7 @@ def load_project_environment(
     default = project_root_for(package_root) / ".env"
     path = (env_file or Path(os.getenv("SUPERVISOR_ENV_FILE", default))).expanduser().resolve()
     load_dotenv(path, override=override)
+    load_dotenv(path.with_name(".secrets.env"), override=True)
     return path.parent
 
 
