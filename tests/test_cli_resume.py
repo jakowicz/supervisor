@@ -221,7 +221,7 @@ def test_project_option_runs_the_factory_with_isolated_state(monkeypatch, tmp_pa
     cli.main()
 
     assert calls[0][0] == factory
-    assert calls[0][3] == workspace / ".supervisor" / "factory.sqlite3"
+    assert calls[0][3] == workspace / ".state" / "factory.sqlite3"
     assert "Build a task app." in calls[0][4]
     assert calls[1][3] == workspace
 
@@ -232,7 +232,7 @@ def test_interrupted_project_factory_resumes_the_first_unaccepted_task(monkeypat
     template = "---\ntask_id: {task_id}\nsequence: {sequence}\ntitle: Task\nbrowser_impact: not_applicable\nplaywright_spec:\n---\n\n## Objective\n\nDo it.\n\n## Acceptance criteria\n\n- Done.\n"
     (factory / "F001.md").write_text(template.format(task_id="F001", sequence=1), encoding="utf-8")
     (factory / "F002.md").write_text(template.format(task_id="F002", sequence=2), encoding="utf-8")
-    database = tmp_path / "projects" / "task-app" / ".supervisor" / "factory.sqlite3"
+    database = tmp_path / "projects" / "task-app" / ".state" / "factory.sqlite3"
     store = RunStore(database)
     store.claim_task("F001", "interrupted-run", 0)
     store.abandon_task("F001", "interrupted-run", "Stopped while implementing F001")
@@ -254,8 +254,9 @@ def test_initial_document_uses_a_generated_project_brief_when_no_local_initial_e
 
 def test_registered_collections_follow_explicit_children_recursively(tmp_path: Path, monkeypatch):
     parent = tmp_path / "source-runbooks"
-    authoring = tmp_path / "project" / "authoring-runbooks"
-    implementation = tmp_path / "project" / "runbooks"
+    workspace = tmp_path / "project"
+    authoring = workspace / "authoring-runbooks"
+    implementation = workspace / "runbooks"
     for directory in (parent / ".supervisor-children", authoring / ".supervisor-children", implementation):
         directory.mkdir(parents=True, exist_ok=True)
     (parent / ".supervisor-children" / "authoring.json").write_text(
@@ -274,7 +275,7 @@ def test_registered_collections_follow_explicit_children_recursively(tmp_path: P
 
     monkeypatch.setattr(cli, "_run_collection_until_complete", run_collection)
 
-    _run_registered_collections(parent, dry_run=False, continue_on_nonpass=False)
+    _run_registered_collections(parent, dry_run=False, continue_on_nonpass=False, project_workspace=workspace)
 
     assert [call[0] for call in calls] == [authoring, implementation]
-    assert all(call[1] == call[0].parent / ".supervisor" / "supervisor.sqlite3" for call in calls)
+    assert all(call[1] == workspace / ".state" / f"{call[0].name}.sqlite3" for call in calls)

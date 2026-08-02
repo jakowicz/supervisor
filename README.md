@@ -2,7 +2,7 @@
 
 This package orchestrates one small, reviewable runbook task at a time. It
 does not impose an application stack, model provider, or QA workflow. Each
-project's ignored `supervisor/.env` is the source of truth for its repository
+project's ignored root `.env` is the source of truth for its repository
 path, enabled agents, execution order, worker commands, validation commands,
 timeouts, publishing policy, observability, and platform-specific tooling.
 Supervisor provides evidence-gated orchestration around that project contract.
@@ -395,9 +395,10 @@ run the complete project workflow with:
 supervisor-run --project my-project
 ```
 
-It reads `projects/my-project/INITIAL.md`, runs the factory, follows only that
-workspace's child collections, and keeps durable factory state in
-`projects/my-project/.supervisor/factory.sqlite3`. Repeating the same command
+It reads `projects/my-project/INITIAL.md` and that workspace's private
+`projects/my-project/.env`, runs the factory, follows only that workspace's
+child collections, and keeps durable factory state in
+`projects/my-project/.state/factory.sqlite3`. Repeating the same command
 skips accepted tasks and resumes the first unfinished task. List all named
 workspaces, their phase, progress, next task, and resume command with:
 
@@ -454,10 +455,10 @@ parent collection:
 
 After the parent completes, `--run-all` follows each registered child collection
 recursively. This is explicit by design: Supervisor never scans and executes
-arbitrary directories. Collection state is stored beside each collection's
-parent in `.supervisor/supervisor.sqlite3`, so generated task IDs such as
-`R0001` remain isolated across projects. Set `SUPERVISOR_DATABASE_PATH` only
-when deliberately sharing state.
+arbitrary directories. Named-project collection state is stored in that
+workspace's `.state/` directory, so generated task IDs such as `R0001` remain
+isolated across projects. Set `SUPERVISOR_DATABASE_PATH` only when deliberately
+sharing state.
 
 ## Updating project configuration safely
 

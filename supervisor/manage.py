@@ -718,18 +718,23 @@ def _set_env_values(path: Path, updates: dict[str, str]) -> None:
     path.chmod(0o600)
 
 
-def _record_initial_art_direction(project_slug: str, brief: str) -> str:
+def _prepare_project_workspace(workspace: Path) -> None:
+    """Create the generated project's private configuration and durable state home."""
+
+    workspace.mkdir(parents=True, exist_ok=True)
+    (workspace / ".state").mkdir(exist_ok=True)
+    _set_env_values(workspace / ".env", {
+        # Factory F-series files still operate on the parent repository while
+        # all generated-project state remains isolated in this workspace.
+        "SUPERVISOR_REPO_ROOT": "..",
+        "SUPERVISOR_DATABASE_PATH": ".state/supervisor.sqlite3",
+    })
+
+
+def _record_initial_art_direction(workspace: Path, project_slug: str, brief: str) -> str:
     """Configure the factory's art lane and return the brief wording to retain."""
 
-    try:
-        config = project_supervisor_checkout(Path.cwd()).parent / ".env"
-    except RuntimeError:
-        # Explicit-output uses outside a Supervisor project still creates a
-        # useful brief; it simply has no local asset lane to configure.
-        return (
-            "- User direction: " + brief if brief else
-            "- No custom direction supplied. Gemma 4 12B should create an original art direction when an asset lane is configured."
-        )
+    config = workspace / ".env"
     if brief:
         _set_env_values(config, {
             "ART_PRODUCT_SLUG": project_slug,
@@ -756,6 +761,7 @@ def create_initial_brief(path: Path, *, project_name: str, force: bool = False) 
     if path.exists() and not force:
         raise ValueError(f"Initial brief already exists: {path}. Use --force to replace it.")
     project_slug = _project_slug(project_name)
+    _prepare_project_workspace(path.parent)
     category = _choose_one("What type of product are you building", PRODUCT_CATEGORIES)
     target_family, additional_targets = _choose_compatible_targets(category)
     targets = [*DEFAULT_WEB_TARGETS, *additional_targets]
@@ -833,7 +839,7 @@ def create_initial_brief(path: Path, *, project_name: str, force: bool = False) 
             "Reference games, apps, or products that this should be functionally similar to",
             example=FUNCTIONAL_REFERENCE_EXAMPLES[category],
         ),
-        "art_direction": _record_initial_art_direction(project_slug, art_direction_input),
+        "art_direction": _record_initial_art_direction(path.parent, project_slug, art_direction_input),
         "open_decisions": "- Infer suitable technical services, including analytics, from the product brief and selected platforms.\n- Infer remaining product decisions from the functional references unless they conflict with an explicit requirement.\n- Record only genuine ambiguities that cannot be resolved safely from the available context.",
     }
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -872,9 +878,9 @@ def project_statuses(projects_directory: Path, factory_runbooks_directory: Path)
     statuses: list[dict[str, str | int]] = []
     for workspace in sorted(path for path in projects_directory.iterdir() if path.is_dir() and (path / "INITIAL.md").is_file()):
         collections = (
-            ("R-series implementation", workspace / "runbooks", workspace / "runbooks" / ".supervisor" / "supervisor.sqlite3"),
-            ("B-series authoring", workspace / "authoring-runbooks", workspace / "authoring-runbooks" / ".supervisor" / "supervisor.sqlite3"),
-            ("F-series factory", factory_runbooks_directory, workspace / ".supervisor" / "factory.sqlite3"),
+            ("R-series implementation", workspace / "runbooks", workspace / ".state" / "runbooks.sqlite3"),
+            ("B-series authoring", workspace / "authoring-runbooks", workspace / ".state" / "authoring-runbooks.sqlite3"),
+            ("F-series factory", factory_runbooks_directory, workspace / ".state" / "factory.sqlite3"),
         )
         progress = [_collection_progress(*collection[1:]) for collection in collections]
         accepted = sum(item[0] for item in progress)

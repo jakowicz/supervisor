@@ -14,12 +14,14 @@ def project_root_for(package_root: Path) -> Path:
     return package_root.resolve().parent
 
 
-def load_project_environment(package_root: Path) -> Path:
-    """Load the private root ``.env`` without depending on the shell cwd."""
+def load_project_environment(
+    package_root: Path, *, env_file: Path | None = None, override: bool = False
+) -> Path:
+    """Load a project ``.env`` without depending on the shell cwd."""
 
     default = project_root_for(package_root) / ".env"
-    path = Path(os.getenv("SUPERVISOR_ENV_FILE", default)).expanduser().resolve()
-    load_dotenv(path)
+    path = (env_file or Path(os.getenv("SUPERVISOR_ENV_FILE", default))).expanduser().resolve()
+    load_dotenv(path, override=override)
     return path.parent
 
 

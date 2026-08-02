@@ -61,11 +61,10 @@ def test_initial_art_direction_updates_only_art_values_in_project_env(monkeypatc
     checkout.mkdir()
     (checkout / "pyproject.toml").write_text("", encoding="utf-8")
     (checkout / ".git").mkdir()
-    config = tmp_path / ".env"
+    config = tmp_path / "projects" / "moonlit" / ".env"
+    config.parent.mkdir(parents=True)
     config.write_text("LANGFUSE_SECRET_KEY=secret\nART_STYLE_NAME=old\n", encoding="utf-8")
-    monkeypatch.chdir(tmp_path)
-
-    recorded = manage._record_initial_art_direction("moonlit", "cool moonlit science-fiction, clean geometric shapes")
+    recorded = manage._record_initial_art_direction(config.parent, "moonlit", "cool moonlit science-fiction, clean geometric shapes")
 
     updated = config.read_text(encoding="utf-8")
     assert "LANGFUSE_SECRET_KEY=secret" in updated
@@ -80,14 +79,24 @@ def test_blank_initial_art_direction_configures_gemma4(monkeypatch, tmp_path: Pa
     checkout.mkdir()
     (checkout / "pyproject.toml").write_text("", encoding="utf-8")
     (checkout / ".git").mkdir()
-    monkeypatch.chdir(tmp_path)
+    workspace = tmp_path / "projects" / "moonlit"
+    recorded = manage._record_initial_art_direction(workspace, "moonlit", "")
 
-    recorded = manage._record_initial_art_direction("moonlit", "")
-
-    updated = (tmp_path / ".env").read_text(encoding="utf-8")
+    updated = (workspace / ".env").read_text(encoding="utf-8")
     assert "ART_DIRECTION_MODE=gemma4_auto" in updated
     assert "ART_DIRECTION_MODEL=gemma4:12b" in updated
     assert "Gemma 4 12B will create" in recorded
+
+
+def test_preparing_named_project_workspace_owns_env_and_state(tmp_path: Path):
+    workspace = tmp_path / "projects" / "moonlit"
+
+    manage._prepare_project_workspace(workspace)
+
+    assert (workspace / ".state").is_dir()
+    env = (workspace / ".env").read_text(encoding="utf-8")
+    assert "SUPERVISOR_REPO_ROOT=.." in env
+    assert "SUPERVISOR_DATABASE_PATH=.state/supervisor.sqlite3" in env
 
 
 def test_project_slug_is_safe_for_a_workspace_path():

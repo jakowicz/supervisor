@@ -121,6 +121,11 @@ given for that task explicitly.""",
             project_workspace = _project_workspace(arguments.project)
         except ValueError as error:
             parser.error(str(error))
+        # A generated project owns its settings and state. Load its .env after
+        # the factory default so it can deliberately override generic values.
+        project_root = load_project_environment(package_root, env_file=project_workspace / ".env", override=True)
+        repo_root = project_path(os.getenv("SUPERVISOR_REPO_ROOT", ".."), project_root)
+        database_path = project_path(os.getenv("SUPERVISOR_DATABASE_PATH", ".state/supervisor.sqlite3"), project_root)
         if not any((arguments.task_range, arguments.run_all, arguments.run_initial)):
             arguments.run_all = True
     batch_modes = sum(bool(value) for value in (arguments.task_range, arguments.run_all, arguments.run_initial))
@@ -162,7 +167,7 @@ given for that task explicitly.""",
         # projects cannot cause accepted-task or resume collisions. An explicit
         # SUPERVISOR_DATABASE_PATH remains the opt-in shared-state override.
         if project_workspace:
-            database_path = project_workspace / ".supervisor" / "factory.sqlite3"
+            database_path = project_workspace / ".state" / "factory.sqlite3"
             arguments.initial = project_workspace / "INITIAL.md"
         elif "SUPERVISOR_DATABASE_PATH" not in os.environ:
             database_path = runbooks_directory.parent / ".supervisor" / "supervisor.sqlite3"
@@ -694,7 +699,10 @@ def _run_registered_collections(
             raise ValueError(f"Registered child collection does not exist: {child_directory} ({registration})")
         if project_workspace and not child_directory.is_relative_to(project_workspace):
             continue
-        child_database = child_directory.parent / ".supervisor" / "supervisor.sqlite3"
+        if project_workspace:
+            child_database = project_workspace / ".state" / f"{child_directory.name}.sqlite3"
+        else:
+            child_database = child_directory.parent / ".state" / "supervisor.sqlite3"
         child_context = _initial_document(child_directory)
         if _run_collection_until_complete(child_directory, dry_run, continue_on_nonpass, child_database, child_context):
             _run_registered_collections(child_directory, dry_run, continue_on_nonpass, project_workspace)
