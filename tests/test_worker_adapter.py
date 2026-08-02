@@ -103,6 +103,8 @@ def test_final_codex_prompt_requires_requirements_review_and_repair():
     assert "Do\nnot run `flutter`, `dart`" in prompt
     assert "independent test stage" in prompt
     assert "Do not return `needs_user_review` solely because Flutter/Dart" in prompt
+    assert "shared, already-dirty worktree" in prompt
+    assert "Git publisher later enforces the accepted commit\nscope" in prompt
 
 
 def test_openhands_prompt_uses_its_finish_action_for_the_contract():

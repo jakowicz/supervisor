@@ -285,6 +285,13 @@ hand the candidate to the independent test stage. Return `repairable_failure`
 only when a concrete implementation or acceptance gap remains that you cannot
 finish; the supervisor will retry this same Codex final-review stage up to its
 configured limit.
+
+The repository may be a shared, already-dirty worktree with unrelated earlier
+tasks. Do not return `needs_user_review` merely because unrelated changes are
+present or this task is not committed yet. Review the task-scoped files and
+evidence; the deterministic Git publisher later enforces the accepted commit
+scope. Return `needs_user_review` only for a real product/safety decision that
+cannot be resolved from the runbook and repository evidence.
 """
     codex_sandbox_instructions = ""
     if codex_sandbox:
