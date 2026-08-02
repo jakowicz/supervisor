@@ -34,12 +34,15 @@ def main() -> None:
       Run one explicit runbook file.
   supervisor-run --task-range D007-D010
       Run a fixed sequential range; stop at the first task needing review.
-  supervisor-run --run-all --runbooks-dir runbooks
-      Run a collection once through completion. INITIAL.md supplies shared
-      project context; newly created runbooks and registered child collections
-      are discovered automatically.
-  supervisor-run --run-initial --runbooks-dir runbooks
-      Run only the first declared task after reading INITIAL.md.
+  supervisor-run --run-all --runbooks-dir runbooks --initial projects/my-game/INITIAL.md
+      Run a collection once through completion using the named project's brief.
+      Newly created runbooks and registered child collections are discovered
+      automatically.
+  supervisor-run --run-initial --runbooks-dir runbooks --initial projects/my-game/INITIAL.md
+      Run only the first declared task after reading the named project's brief.
+  supervisor-run --project my-game
+      Resume the complete factory and generated runbook collections for
+      projects/my-game, using its INITIAL.md and durable per-project state.
 
 Use supervisor initial to create INITIAL.md interactively. Use
 supervisor-reports list, task-state, or show to inspect evidence and recovery
@@ -58,6 +61,8 @@ given for that task explicitly.""",
         "--runbooks-dir",
         help="Directory containing a runbook collection; defaults to <project>/runbooks. --run-all follows its registered children.",
     )
+    parser.add_argument("--initial", type=Path, help="Initial project brief for --run-all or --run-initial. Use projects/<project-name>/INITIAL.md for the runbook factory.")
+    parser.add_argument("--project", help="Named workspace under projects/. Implies --run-all and uses projects/<name>/INITIAL.md plus isolated durable state.")
     parser.add_argument("--continue-on-nonpass", action="store_true", help="Continue a task range after a task needs review or fails. Use only when tasks are independent.")
     parser.add_argument("--runbook", help="Path to a single task runbook, relative to the repository or absolute.")
     parser.add_argument("--title")
@@ -93,13 +98,31 @@ given for that task explicitly.""",
     package_root = Path(__file__).resolve().parents[1]
     repo_root = Path(os.getenv("SUPERVISOR_REPO_ROOT", package_root.parents[1])).resolve()
     database_path = Path(os.getenv("SUPERVISOR_DATABASE_PATH", package_root / ".state" / "supervisor.sqlite3"))
+    project_workspace: Path | None = None
+    if arguments.project:
+        if arguments.initial:
+            parser.error("--project already selects its own INITIAL.md; do not combine it with --initial.")
+        try:
+            project_workspace = _project_workspace(arguments.project)
+        except ValueError as error:
+            parser.error(str(error))
+        if not any((arguments.task_range, arguments.run_all, arguments.run_initial)):
+            arguments.run_all = True
     batch_modes = sum(bool(value) for value in (arguments.task_range, arguments.run_all, arguments.run_initial))
     if batch_modes:
         if batch_modes > 1:
             parser.error("Choose only one of --task-range, --run-all, or --run-initial.")
         if any((arguments.task_id, arguments.runbook, arguments.title, arguments.objective, arguments.acceptance)):
             parser.error("Batch modes cannot be combined with a single-task runbook or ad-hoc task options.")
-        supplied_directory = Path(arguments.runbooks_dir).expanduser() if arguments.runbooks_dir else repo_root / "runbooks"
+        if arguments.initial and not (arguments.run_all or arguments.run_initial):
+            parser.error("--initial can be used only with --run-all or --run-initial.")
+        if project_workspace and arguments.task_range:
+            parser.error("--project runs a collection; use --run-all (the default) or --run-initial, not --task-range.")
+        supplied_directory = (
+            Path(arguments.runbooks_dir).expanduser()
+            if arguments.runbooks_dir
+            else (Path.cwd() / "runbooks" if project_workspace else repo_root / "runbooks")
+        )
         runbooks_directory = supplied_directory if supplied_directory.is_absolute() else (supplied_directory.resolve() if supplied_directory.is_dir() else repo_root / supplied_directory)
         if arguments.task_range:
             try:
@@ -123,12 +146,15 @@ given for that task explicitly.""",
         # Keep durable state beside each collection so different generated
         # projects cannot cause accepted-task or resume collisions. An explicit
         # SUPERVISOR_DATABASE_PATH remains the opt-in shared-state override.
-        if "SUPERVISOR_DATABASE_PATH" not in os.environ:
+        if project_workspace:
+            database_path = project_workspace / ".supervisor" / "factory.sqlite3"
+            arguments.initial = project_workspace / "INITIAL.md"
+        elif "SUPERVISOR_DATABASE_PATH" not in os.environ:
             database_path = runbooks_directory.parent / ".supervisor" / "supervisor.sqlite3"
         initial_context = ""
         if arguments.run_all or arguments.run_initial:
             try:
-                initial_context = _initial_document(runbooks_directory)
+                initial_context = _initial_document(runbooks_directory, arguments.initial)
             except ValueError as error:
                 parser.error(str(error))
         if arguments.run_all:
@@ -136,7 +162,7 @@ given for that task explicitly.""",
                 runbooks_directory, arguments.dry_run, arguments.continue_on_nonpass, database_path, initial_context
             )
             if completed:
-                _run_registered_collections(runbooks_directory, arguments.dry_run, arguments.continue_on_nonpass)
+                _run_registered_collections(runbooks_directory, arguments.dry_run, arguments.continue_on_nonpass, project_workspace)
         else:
             _run_task_range(runbooks, arguments.dry_run, arguments.continue_on_nonpass, database_path, initial_context)
         return
@@ -506,13 +532,22 @@ def _collection_runbooks(directory: Path) -> list[Path]:
     return sorted(candidates, key=lambda path: (load_task(path).sequence, path.name))
 
 
-def _initial_document(directory: Path) -> str:
+def _initial_document(directory: Path, explicit_path: Path | None = None) -> str:
     """Load the collection context that must precede an all-task run."""
 
-    # The source factory collection owns INITIAL.md. Generated collections live
-    # one level below a project workspace and inherit its normalised brief.
-    # Keeping this resolution generic makes those collections ordinary
-    # Supervisor collections rather than a special generation command.
+    if explicit_path is not None:
+        path = explicit_path.expanduser().resolve()
+        if not path.is_file():
+            raise ValueError(f"--initial requires an existing Markdown brief: {path}.")
+        content = path.read_text(encoding="utf-8").strip()
+        if not content:
+            raise ValueError(f"--initial requires a completed {path}.")
+        return content
+
+    # Generated collections live one level below a project workspace and inherit
+    # its normalised brief. The source factory receives its brief explicitly by
+    # --initial, preventing a global CLI from accidentally reading another
+    # project's INITIAL.md.
     candidates = (directory / "INITIAL.md", directory.parent / "PROJECT_BRIEF.md")
     for path in candidates:
         if path.is_file():
@@ -522,6 +557,25 @@ def _initial_document(directory: Path) -> str:
             raise ValueError(f"--run-all requires a completed {path}.")
     expected = " or ".join(str(path) for path in candidates)
     raise ValueError(f"--run-all requires {expected}.")
+
+
+def _project_workspace(value: str) -> Path:
+    """Resolve a named project workspace without consulting the CLI install path."""
+
+    requested = Path(value).expanduser()
+    if requested.is_absolute():
+        workspace = requested
+    elif requested.parts and requested.parts[0] == "projects":
+        workspace = Path.cwd() / requested
+    else:
+        workspace = Path.cwd() / "projects" / requested
+    workspace = workspace.resolve()
+    if not workspace.is_dir():
+        raise ValueError(f"--project requires an existing workspace: {workspace}. Run `supervisor initial` first.")
+    initial = workspace / "INITIAL.md"
+    if not initial.is_file():
+        raise ValueError(f"--project requires {initial}. Run `supervisor initial` first.")
+    return workspace
 
 
 def _run_task_range(
@@ -594,7 +648,9 @@ def _run_collection_until_complete(
             return False
 
 
-def _run_registered_collections(directory: Path, dry_run: bool, continue_on_nonpass: bool) -> None:
+def _run_registered_collections(
+    directory: Path, dry_run: bool, continue_on_nonpass: bool, project_workspace: Path | None = None
+) -> None:
     """Follow explicit child-collection registrations after a parent completes."""
 
     registrations = directory / ".supervisor-children"
@@ -611,10 +667,12 @@ def _run_registered_collections(directory: Path, dry_run: bool, continue_on_nonp
         child_directory = (directory / child_value).resolve()
         if not child_directory.is_dir():
             raise ValueError(f"Registered child collection does not exist: {child_directory} ({registration})")
+        if project_workspace and not child_directory.is_relative_to(project_workspace):
+            continue
         child_database = child_directory.parent / ".supervisor" / "supervisor.sqlite3"
         child_context = _initial_document(child_directory)
         if _run_collection_until_complete(child_directory, dry_run, continue_on_nonpass, child_database, child_context):
-            _run_registered_collections(child_directory, dry_run, continue_on_nonpass)
+            _run_registered_collections(child_directory, dry_run, continue_on_nonpass, project_workspace)
 
 
 if __name__ == "__main__":

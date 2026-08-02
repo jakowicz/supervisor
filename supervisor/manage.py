@@ -6,6 +6,7 @@ import argparse
 import getpass
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -56,7 +57,7 @@ DEFAULTS = {
 }
 
 DEFAULT_SUPERVISOR_URL = "git@github.com:jakowicz/supervisor.git"
-DEFAULT_INITIAL_BRIEF_PATH = Path(__file__).resolve().parents[2] / "runbooks" / "INITIAL.md"
+DEFAULT_PROJECTS_DIRECTORY = Path("projects")
 MINIMUM_PYTHON_VERSION = (3, 10)
 CODEX_MODELS = ("gpt-5.6-terra", "gpt-5.6-sol")
 GAME_TEST_COMMANDS = (
@@ -180,6 +181,17 @@ GAME_TARGET_FAMILIES = (
     ("Living-room TV game", ("Apple TV / tvOS", "Android TV / Google TV", "Amazon Fire TV", "Samsung Smart TV / Tizen", "LG Smart TV / webOS", "Roku", "Hisense / VIDAA")),
     ("Console game", ("PlayStation", "Xbox", "Nintendo Switch", "PC game storefronts (Steam, Epic Games Store, GOG, itch.io)")),
     ("Spatial game", ("Meta Quest / virtual reality", "Augmented or mixed reality")),
+)
+GAME_CHARACTERISTICS = (
+    "2D presentation",
+    "3D presentation",
+    "Role-playing game (RPG)",
+    "Real-time action, platformer, or combat game",
+    "Strategy, simulation, or management game",
+    "Puzzle, card, board, or turn-based game",
+    "Narrative or visual-novel game",
+    "Multiplayer or social game",
+    "Single-player offline game",
 )
 
 RUNBOOK_TEMPLATE = """---
@@ -361,6 +373,50 @@ def _choose_target_family(category: str) -> tuple[str, tuple[str, ...]]:
     return next(family for family in families if family[0] == selected_name)
 
 
+def _game_target_requirement_options(target: str, characteristics: list[str]) -> tuple[str, ...]:
+    """Return selectable delivery requirements appropriate to a game target."""
+
+    options = [
+        "Accessible controls, text, captions, and visual settings",
+        "Save, resume, and data-loss recovery behaviour",
+        "Crash reporting and player-facing error recovery",
+    ]
+    if target in {"Responsive public web application", "Desktop web application"}:
+        options.extend(("Keyboard, mouse, touch, and gamepad input", "Responsive layout across phone, tablet, and desktop screens", "Browser compatibility and web performance budget"))
+    elif target == "Progressive web app (PWA)":
+        options.extend(("Installable PWA experience", "Offline asset and save-data behaviour", "Safe game update and cache-refresh behaviour"))
+    elif target in {"Android phone", "Android tablet / ChromeOS", "iPhone (iOS)", "iPad (iPadOS)"}:
+        options.extend(("Touch controls and orientation rules", "Mobile performance, battery, thermal, and download-size budget", "App-store packaging, privacy disclosures, and release requirements"))
+    elif target in {"macOS", "Windows", "Linux", "PC game storefronts (Steam, Epic Games Store, GOG, itch.io)"}:
+        options.extend(("Keyboard, mouse, and gamepad support", "Window, display-resolution, graphics-quality, and accessibility settings", "Desktop packaging, installation, update, and storefront requirements"))
+    elif target in {"PlayStation", "Xbox", "Nintendo Switch"}:
+        options.extend(("Controller-first input, system navigation, and player profile handling", "Console save data, suspend/resume, achievement, and entitlement behaviour", "Performance targets and platform certification requirements"))
+    elif "TV" in target or target in {"Samsung Smart TV / Tizen", "LG Smart TV / webOS", "Roku", "Hisense / VIDAA"}:
+        options.extend(("Remote-control and game-controller navigation", "Ten-foot UI readability and safe viewing-area layout", "TV hardware performance and store-release requirements"))
+    elif target in {"Meta Quest / virtual reality", "Augmented or mixed reality"}:
+        options.extend(("Comfort settings, locomotion, and motion-sickness mitigation", "Tracked-controller, hand-input, and boundary behaviour", "Spatial performance, battery, and platform-store requirements"))
+
+    if "Role-playing game (RPG)" in characteristics:
+        options.extend(("Long-session save, checkpoint, and recovery rules", "Readable dialogue, inventory, quest, and progression UI"))
+    if "Real-time action, platformer, or combat game" in characteristics:
+        options.extend(("Stable frame-time and input-latency target", "Control remapping and difficulty/accessibility assists"))
+    if "Multiplayer or social game" in characteristics:
+        options.extend(("Online identity, matchmaking, moderation, and reporting requirements", "Network-loss, reconnection, and multiplayer state-recovery behaviour"))
+    return tuple(dict.fromkeys(options))
+
+
+def _game_target_requirements(target: str, characteristics: list[str]) -> str:
+    selected = _choose_many(
+        f"Select requirements for {target}",
+        _game_target_requirement_options(target, characteristics),
+    )
+    extra = _prompt(f"Other requirements for {target}", "None recorded.")
+    lines = [f"- {requirement}" for requirement in selected]
+    if extra != "None recorded.":
+        lines.append(f"- Other: {extra}")
+    return "\n".join(lines) or "- No target-specific requirements selected yet."
+
+
 def _render_initial_brief(values: dict[str, str], targets: list[str], target_details: dict[str, str]) -> str:
     target_lines = "\n".join(f"- [x] {target}" for target in targets)
     detail_lines = "\n".join(f"### {target}\n\n{detail}" for target, detail in target_details.items())
@@ -368,7 +424,13 @@ def _render_initial_brief(values: dict[str, str], targets: list[str], target_det
 
 This file is the source of truth for the document-producing collection. Later
 runbooks must preserve its scope and record unanswered questions rather than
-inventing requirements.
+inventing requirements. This brief belongs to the project workspace named below,
+not to the reusable factory runbooks.
+
+## Project workspace
+
+- Project name: {values['project_name']}
+- Workspace: `projects/{values['project_slug']}/`
 
 ## What are we creating?
 
@@ -377,6 +439,10 @@ inventing requirements.
 ## Product category
 
 - [x] {values['category']}
+
+## Game characteristics
+
+{values.get('game_characteristics', '- Not applicable.')}
 
 ## Who is it for, and what must it help them do?
 
@@ -430,24 +496,40 @@ Additional selected targets:
 """
 
 
-def create_initial_brief(path: Path, *, force: bool = False) -> Path:
+def _project_slug(project_name: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", project_name.strip().lower()).strip("-")
+    if not slug:
+        raise ValueError("Project name must include letters or numbers.")
+    return slug
+
+
+def create_initial_brief(path: Path, *, project_name: str, force: bool = False) -> Path:
     """Interactively collect a complete project brief and write INITIAL.md."""
 
     path = path.expanduser().resolve()
     if path.exists() and not force:
         raise ValueError(f"Initial brief already exists: {path}. Use --force to replace it.")
+    project_slug = _project_slug(project_name)
     category = _choose_one("What type of product are you building", PRODUCT_CATEGORIES)
     target_family, compatible_targets = _choose_target_family(category)
     additional_targets = _choose_many("Select every target in this compatible profile that you want to support", compatible_targets)
     targets = [*DEFAULT_WEB_TARGETS, *additional_targets]
-    target_details = {
-        target: _required(f"Requirements for {target} (input, screens, offline, performance, release constraints)")
-        for target in targets
-    }
+    game_characteristics = _choose_many("Select the game characteristics that apply", GAME_CHARACTERISTICS) if category == "Game" else []
+    target_details = (
+        {target: _game_target_requirements(target, game_characteristics) for target in targets}
+        if category == "Game"
+        else {
+            target: _required(f"Requirements for {target} (input, screens, offline, performance, release constraints)")
+            for target in targets
+        }
+    )
     values = {
+        "project_name": project_name,
+        "project_slug": project_slug,
         "product": _required("Describe what you are creating"),
         "category": category,
         "target_family": target_family,
+        "game_characteristics": "\n".join(f"- [x] {item}" for item in game_characteristics) or "- Not specified.",
         "users": _required("Who is it for"),
         "primary_outcome": _required("What is their primary outcome"),
         "first_session": _required("What makes the first useful session successful"),
@@ -978,7 +1060,7 @@ def main() -> None:
   supervisor init ../my-project
       Create an empty project with a Supervisor checkout and starter runbooks.
   supervisor initial --force
-      Interactively write runbooks/INITIAL.md for a document-producing factory.
+      Ask for a project name and write projects/<project-name>/INITIAL.md.
   supervisor configure
       Review the local .env, including coding agents and stage order.
   supervisor update
@@ -993,8 +1075,10 @@ supervisor-dashboard --serve to view the local dashboard.""",
     commands = parser.add_subparsers(dest="command", required=True)
     configure_parser = commands.add_parser("configure", help="Interactively create or update an ignored .env configuration file.")
     configure_parser.add_argument("--config", type=Path, default=Path(".env"), help="Configuration file to write (default: .env).")
-    initial_parser = commands.add_parser("initial", help="Interactively create the project brief consumed by the first runbook.")
-    initial_parser.add_argument("--output", type=Path, default=DEFAULT_INITIAL_BRIEF_PATH, help="Brief path (default: <project>/runbooks/INITIAL.md).")
+    initial_parser = commands.add_parser("initial", help="Interactively create a named project's brief consumed by the first factory runbook.")
+    initial_parser.add_argument("--project-name", help="Project name; prompted for when omitted. The default brief path is projects/<project-name>/INITIAL.md.")
+    initial_parser.add_argument("--projects-dir", type=Path, default=DEFAULT_PROJECTS_DIRECTORY, help="Directory containing generated project workspaces (default: projects).")
+    initial_parser.add_argument("--output", type=Path, help="Explicit brief path; normally omit this and let --project-name choose projects/<project-name>/INITIAL.md.")
     initial_parser.add_argument("--force", action="store_true", help="Replace an existing initial brief after collecting new answers.")
     migration_parser = commands.add_parser("env-migrate", help="Apply versioned, non-destructive .env migrations and record an audit log.")
     migration_parser.add_argument("--config", type=Path, default=Path(".env"), help="Project .env path (default: .env).")
@@ -1017,7 +1101,10 @@ supervisor-dashboard --serve to view the local dashboard.""",
         configure(arguments.config.expanduser().resolve())
     if arguments.command == "initial":
         try:
-            brief_path = create_initial_brief(arguments.output, force=arguments.force)
+            project_name = arguments.project_name or _required("Project name")
+            project_slug = _project_slug(project_name)
+            output = arguments.output or arguments.projects_dir / project_slug / "INITIAL.md"
+            brief_path = create_initial_brief(output, project_name=project_name, force=arguments.force)
         except ValueError as error:
             parser.error(str(error))
         print(f"Wrote initial project brief: {brief_path}")

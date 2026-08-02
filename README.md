@@ -411,14 +411,16 @@ Run an entire collection once, including any new runbooks created by accepted
 tasks during the run:
 
 ```bash
-supervisor-run --run-all --runbooks-dir ../../runbooks
+supervisor-run --run-all --runbooks-dir ../../runbooks --initial ../../projects/my-project/INITIAL.md
 ```
 
-`--run-all` reads `INITIAL.md` in that collection first and appends its context
-to every task. A generated collection can inherit its parent project's
-`PROJECT_BRIEF.md` instead. It re-enumerates the collection after each accepted
-wave, so bounded planning or authoring tasks can safely create the next wave
-without the operator restarting Supervisor.
+Use `--initial PATH` when the brief belongs to a named project rather than the
+reusable runbook collection. Supervisor reads that file first and appends its
+context to every task. Without the flag, it looks for `INITIAL.md` in the
+collection; a generated collection can instead inherit its parent project's
+`PROJECT_BRIEF.md`. It re-enumerates the collection after each accepted wave,
+so bounded planning or authoring tasks can safely create the next wave without
+the operator restarting Supervisor.
 
 For intentionally chained collections, add a JSON registration beneath the
 parent collection:

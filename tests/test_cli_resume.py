@@ -1,9 +1,11 @@
+import sys
+
 import pytest
 
 from pathlib import Path
 
 from supervisor import cli
-from supervisor.cli import _can_recover_qwen, _collection_runbooks, _completion_banner, _expand_task_range, _initial_document, _qwen_session_to_resume, _recovered_qwen_event, _resume_stage, _run_registered_collections, _run_summary, _should_skip_accepted_task
+from supervisor.cli import _can_recover_qwen, _collection_runbooks, _completion_banner, _expand_task_range, _initial_document, _project_workspace, _qwen_session_to_resume, _recovered_qwen_event, _resume_stage, _run_registered_collections, _run_summary, _should_skip_accepted_task
 from supervisor.models import NextStep, RunEvent, Status, Task, TaskRun, WorkerResult
 
 
@@ -137,6 +139,49 @@ def test_initial_document_requires_and_loads_collection_context(tmp_path: Path):
     (tmp_path / "INITIAL.md").write_text("# Initial project brief\n\nBuild a task app.\n", encoding="utf-8")
 
     assert "Build a task app." in _initial_document(tmp_path)
+
+
+def test_initial_document_uses_explicit_project_brief(tmp_path: Path):
+    collection = tmp_path / "factory-runbooks"
+    collection.mkdir()
+    brief = tmp_path / "projects" / "task-app" / "INITIAL.md"
+    brief.parent.mkdir(parents=True)
+    brief.write_text("# Initial project brief\n\nBuild a task app.\n", encoding="utf-8")
+
+    assert "Build a task app." in _initial_document(collection, brief)
+
+
+def test_project_workspace_uses_the_current_factory_directory(monkeypatch, tmp_path: Path):
+    workspace = tmp_path / "projects" / "task-app"
+    workspace.mkdir(parents=True)
+    (workspace / "INITIAL.md").write_text("# Brief\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    assert _project_workspace("task-app") == workspace
+
+
+def test_project_option_runs_the_factory_with_isolated_state(monkeypatch, tmp_path: Path):
+    workspace = tmp_path / "projects" / "task-app"
+    workspace.mkdir(parents=True)
+    (workspace / "INITIAL.md").write_text("# Brief\n\nBuild a task app.\n", encoding="utf-8")
+    factory = tmp_path / "runbooks"
+    factory.mkdir()
+    (factory / "F001.md").write_text(
+        "---\ntask_id: F001\nsequence: 1\ntitle: Factory\nbrowser_impact: not_applicable\nplaywright_spec:\n---\n\n## Objective\n\nDo it.\n\n## Acceptance criteria\n\n- Done.\n",
+        encoding="utf-8",
+    )
+    calls = []
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "argv", ["supervisor-run", "--project", "task-app"])
+    monkeypatch.setattr(cli, "_run_collection_until_complete", lambda *args: calls.append(args) or True)
+    monkeypatch.setattr(cli, "_run_registered_collections", lambda *args: calls.append(args))
+
+    cli.main()
+
+    assert calls[0][0] == factory
+    assert calls[0][3] == workspace / ".supervisor" / "factory.sqlite3"
+    assert "Build a task app." in calls[0][4]
+    assert calls[1][3] == workspace
 
 
 def test_initial_document_uses_a_generated_project_brief_when_no_local_initial_exists(tmp_path: Path):

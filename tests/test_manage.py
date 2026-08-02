@@ -22,6 +22,8 @@ def test_interactive_init_asks_for_project_type_immediately_after_project_path(m
 
 def test_initial_brief_renderer_always_includes_responsive_web_and_pwa():
     values = {
+        "project_name": "Task App",
+        "project_slug": "task-app",
         "product": "A task app",
         "category": "Consumer application",
         "users": "People",
@@ -49,6 +51,11 @@ def test_initial_brief_renderer_always_includes_responsive_web_and_pwa():
     assert "- [x] Responsive public web application" in rendered
     assert "- [x] Progressive web app (PWA)" in rendered
     assert "### iPhone (iOS)" in rendered
+    assert "- Workspace: `projects/task-app/`" in rendered
+
+
+def test_project_slug_is_safe_for_a_workspace_path():
+    assert manage._project_slug("Final Fantasy V: Reborn!") == "final-fantasy-v-reborn"
 
 
 def test_choose_many_fallback_accepts_multiple_target_systems(monkeypatch):
@@ -72,6 +79,14 @@ def test_game_target_family_only_offers_compatible_game_targets(monkeypatch):
         "Nintendo Switch",
         "PC game storefronts (Steam, Epic Games Store, GOG, itch.io)",
     )
+
+
+def test_game_target_requirement_options_include_rpg_and_console_needs():
+    options = manage._game_target_requirement_options("PlayStation", ["Role-playing game (RPG)"])
+
+    assert "Controller-first input, system navigation, and player profile handling" in options
+    assert "Long-session save, checkpoint, and recovery rules" in options
+    assert "Touch controls and orientation rules" not in options
 
 
 def test_initialise_project_scaffolds_a_safe_empty_project(monkeypatch, tmp_path: Path):
