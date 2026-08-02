@@ -16,7 +16,7 @@ from .completion_audit import audit
 from .git_publish import preflight, publish
 from .routing import first_stage, next_route
 from .state import SupervisorState
-from .workers import art_director, asset_finisher, asset_generator, asset_qa, browser, codex, coder, openhands, tester, visual_review
+from .workers import art_director, asset_finisher, asset_generator, asset_qa, audio_director, audio_generator, audio_qa, browser, codex, coder, openhands, tester, visual_review
 from .observability import SupervisorTelemetry
 
 
@@ -192,6 +192,9 @@ def create_graph(config: SupervisorConfig):
     builder.add_node("asset_generator", worker_node("asset_generator", "ComfyUI Z-Image Turbo", "local ComfyUI", lambda task: asset_generator.run(task, config.repo_root)))
     builder.add_node("asset_finisher", worker_node("asset_finisher", "asset finisher", "deterministic local processing", lambda task: asset_finisher.run(task, config.repo_root)))
     builder.add_node("asset_qa", worker_node("asset_qa", "asset QA reviewer", "local technical and provenance checks", lambda task: asset_qa.run(task, config.repo_root)))
+    builder.add_node("audio_director", worker_node("audio_director", "product audio director", "structured local cue brief", lambda task: audio_director.run(task, config.repo_root)))
+    builder.add_node("audio_generator", worker_node("audio_generator", "ACE-Step 1.5 XL Turbo", "local ACE-Step", lambda task: audio_generator.run(task, config.repo_root)))
+    builder.add_node("audio_qa", worker_node("audio_qa", "audio QA reviewer", "local technical and provenance checks", lambda task: audio_qa.run(task, config.repo_root)))
     builder.add_node("qwen", worker_node("qwen", "Qwen3 Coder", "QWEN_MODEL or CLI default", _dry_run_coder if config.dry_run else coder.run))
     builder.add_node("openhands", worker_node("openhands", "OpenHands", "OPENHANDS configured model", openhands.run))
     builder.add_node("codex", worker_node("codex", "Codex", "CODEX_MODEL or CLI default", codex.run))
@@ -249,7 +252,7 @@ def create_graph(config: SupervisorConfig):
         return {"worker_results": [*state.get("worker_results", []), result], "events": [*state.get("events", []), event], "route": route, "notes": [*state.get("notes", []), f"completion audit: {result.status.value}: {result.summary}"]}
 
     builder.add_node("completion_audit", audit_node)
-    for stage in ("art_director", "asset_generator", "asset_finisher", "asset_qa", "qwen", "openhands", "codex", "codex_final", "precheck", "test", "browser", "visual_review", "completion_audit", "git_publish"):
+    for stage in ("art_director", "asset_generator", "asset_finisher", "asset_qa", "audio_director", "audio_generator", "audio_qa", "qwen", "openhands", "codex", "codex_final", "precheck", "test", "browser", "visual_review", "completion_audit", "git_publish"):
         builder.add_conditional_edges(stage, lambda state: state["route"])
     builder.add_edge("accept", END)
     builder.add_edge("user_review", END)

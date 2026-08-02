@@ -19,13 +19,20 @@ _LIMIT_ENVIRONMENT_KEYS = {
 }
 _IMPLEMENTATION_AGENTS = ("qwen", "openhands", "codex")
 _ART_STAGES = ("art_director", "asset_generator", "asset_finisher", "asset_qa")
-_ALL_STAGES = (*_ART_STAGES, "qwen", "openhands", "codex", "precheck", "codex_final", "test", "browser", "visual_review", "completion_audit", "git_publish")
+_AUDIO_STAGES = ("audio_director", "audio_generator", "audio_qa")
+_ALL_STAGES = (*_ART_STAGES, *_AUDIO_STAGES, "qwen", "openhands", "codex", "precheck", "codex_final", "test", "browser", "visual_review", "completion_audit", "git_publish")
 
 
 def asset_pipeline_required(task) -> bool:
     """True only for runbooks which explicitly request generated visual assets."""
 
     return bool(task and task.asset_impact.strip().lower() == "required")
+
+
+def audio_pipeline_required(task) -> bool:
+    """True only for runbooks explicitly requesting local music/audio."""
+
+    return bool(task and task.audio_impact.strip().lower() == "required")
 
 
 def implementation_agents() -> tuple[str, ...]:
@@ -67,6 +74,8 @@ def configured_stage_order() -> tuple[str, ...]:
 def first_stage(task=None) -> str:
     if asset_pipeline_required(task):
         return "art_director"
+    if audio_pipeline_required(task):
+        return "audio_director"
     return configured_stage_order()[0] if configured_stage_order() else primary_agent()
 
 
@@ -117,13 +126,16 @@ def next_route(stage: str, result: WorkerResult, active_agent: str, attempts: di
         # Art stages always use the bounded, evidence-gated art lane.  A
         # legacy configured code pipeline must never make an art stage jump
         # directly to acceptance.
-        if configured_stage_order() and stage not in _ART_STAGES:
+        if configured_stage_order() and stage not in (*_ART_STAGES, *_AUDIO_STAGES):
             return next_configured_stage(stage)
         routes = {
             "art_director": "asset_generator",
             "asset_generator": "asset_finisher",
             "asset_finisher": "asset_qa",
-            "asset_qa": primary_agent(),
+            "asset_qa": "audio_director" if audio_pipeline_required(task) else primary_agent(),
+            "audio_director": "audio_generator",
+            "audio_generator": "audio_qa",
+            "audio_qa": primary_agent(),
             # A successful primary/fallback implementation is always examined
             # and, where necessary, repaired by Codex before acceptance.  A
             # deterministic precheck comes first: do not spend the final
@@ -144,14 +156,17 @@ def next_route(stage: str, result: WorkerResult, active_agent: str, attempts: di
         return routes[stage]
     if result.status is Status.NEEDS_USER_REVIEW:
         return "user_review"
+    # A worker that cannot start has produced no candidate to repair. Retrying
+    # it under the same environment only repeats the infrastructure failure
+    # and can leave a later resume pointed at a validation stage with no
+    # worker evidence. Stop after the first failure and preserve its log for
+    # the operator to repair the runtime.
+    if result.status is Status.ENVIRONMENT_FAILURE:
+        return "user_review"
     # Asset creation has no coding-agent fallback: blindly changing a visual
     # brief or regenerating art after a provenance/technical rejection would
     # hide the reason an asset was rejected. Preserve evidence and stop.
-    if stage in _ART_STAGES:
-        return "user_review"
-    # Validation infrastructure is not a coding-agent defect. Preserve evidence
-    # and ask for repair/configuration rather than burning expensive retries.
-    if result.status is Status.ENVIRONMENT_FAILURE and stage in {"precheck", "test", "browser", "visual_review"}:
+    if stage in (*_ART_STAGES, *_AUDIO_STAGES):
         return "user_review"
     if stage in {"precheck", "test", "browser", "visual_review", "completion_audit"}:
         return next_agent(active_agent, attempts)

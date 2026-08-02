@@ -83,6 +83,14 @@ class Task(BaseModel):
     asset_brief: str = ""
     asset_ids: list[str] = Field(default_factory=list)
     visual_style_version: str = ""
+    # Audio is an independent optional production lane. Music and sound effects
+    # are explicit product assets, never an implicit side-effect of coding.
+    audio_impact: str = "not_applicable"
+    audio_brief: str = ""
+    audio_ids: list[str] = Field(default_factory=list)
+    audio_duration_seconds: int = 0
+    audio_loop: str = "not_applicable"
+    audio_style_version: str = ""
     # R-series contracts retain a compact, machine-readable trail back to the
     # canonical product decision and bounded authoring batch that created them.
     source_specifications: list[str] = Field(default_factory=list)

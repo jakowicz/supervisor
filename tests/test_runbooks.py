@@ -42,7 +42,7 @@ def test_runbook_accepts_opt_in_asset_metadata(tmp_path):
     path = tmp_path / "R0002.md"
     path.write_text(
         "---\ntask_id: R0002\nsequence: 1\ntitle: Gate\nbrowser_impact: not_applicable\nplaywright_spec: \n"
-        "asset_impact: required\nasset_brief: docs/art/briefs/gate.md\nasset_ids: gate,gate_build\nvisual_style_version: project-v1\nsource_specifications: specification/04-experience-contract.md#gate\nsource_catalogue_ids: IMP-WORLD-001\nauthoring_batch: B0001\nfactory_stages: F004,F012,F013\n---\n"
+            "asset_impact: required\nasset_brief: docs/art/briefs/gate.md\nasset_ids: gate,gate_build\nvisual_style_version: project-v1\naudio_impact: not_applicable\naudio_ids: \naudio_brief: \naudio_duration_seconds: 0\naudio_loop: not_applicable\naudio_style_version: \nsource_specifications: specification/04-experience-contract.md#gate\nsource_catalogue_ids: IMP-WORLD-001\nauthoring_batch: B0001\nfactory_stages: F004,F012,F013\n---\n"
         "# R0002\n\n## Objective\n\nMake a gate.\n\n## Acceptance criteria\n\n- It is original.\n",
         encoding="utf-8",
     )

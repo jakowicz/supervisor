@@ -62,6 +62,17 @@ DEFAULTS = {
     "ASSET_GENERATOR_COMMAND": "./.venv/bin/python scripts/comfy_asset_generator.py {task_file}",
     "ASSET_FINISHER_COMMAND": "./.venv/bin/python scripts/asset_finisher.py {task_file}",
     "ASSET_QA_COMMAND": "./.venv/bin/python scripts/asset_qa_worker.py {task_file}",
+    "ACE_STEP_API_URL": "http://127.0.0.1:8001",
+    "ACE_STEP_MODEL": "acestep-v15-xl-turbo",
+    "ACE_STEP_GENERATION_TIMEOUT_SECONDS": "1800",
+    "ACE_STEP_INFERENCE_STEPS": "8",
+    "AUDIO_GENERATOR_COMMAND": "./.venv/bin/python scripts/ace_audio_generator.py {task_file}",
+    "AUDIO_QA_COMMAND": "./.venv/bin/python scripts/audio_qa_worker.py {task_file}",
+    "AUDIO_STYLE_NAME": "original product audio",
+    "AUDIO_STYLE_PROMPT": "original instrumental product music, clear looping structure, no vocals, no recognisable melody",
+    "AUDIO_DIRECTION_MODE": "gemma4_auto",
+    "AUDIO_DIRECTION_MODEL": "gemma4:12b",
+    "AUDIO_DIRECTION_BRIEF": "",
     "OLLAMA_BASE_URL": "http://127.0.0.1:11434",
     "LOCAL_VISION_MODEL": "gemma4:12b",
     "ASSET_VISION_QA_ENABLED": "false",
@@ -681,6 +692,10 @@ Additional selected targets:
 
 {values['art_direction']}
 
+## Audio direction
+
+{values.get('audio_direction', '- Not configured initially.')}
+
 ## Open decisions
 
 {values['open_decisions']}
@@ -779,6 +794,17 @@ def _record_initial_art_direction(workspace: Path, project_slug: str, brief: str
     return "- No custom direction supplied. Gemma 4 12B will create an original art direction for asset work.\n- The project `.env` has been configured for Gemma 4 12B automatic art direction."
 
 
+def _record_initial_audio_direction(workspace: Path, brief: str) -> str:
+    """Configure an independent original music/SFX direction for a game."""
+
+    config = workspace / ".env"
+    if brief:
+        _set_env_values(config, {"AUDIO_DIRECTION_MODE": "user_provided", "AUDIO_DIRECTION_MODEL": "gemma4:12b", "AUDIO_DIRECTION_BRIEF": brief, "AUDIO_STYLE_NAME": "user-directed original product audio", "AUDIO_STYLE_PROMPT": f"{brief}, original instrumental product music, no vocals, no recognisable melody"})
+        return f"- User direction: {brief}\n- ACE-Step 1.5 XL Turbo will use this project audio direction."
+    _set_env_values(config, {"AUDIO_DIRECTION_MODE": "gemma4_auto", "AUDIO_DIRECTION_MODEL": "gemma4:12b", "AUDIO_DIRECTION_BRIEF": ""})
+    return "- No custom direction supplied. Gemma 4 12B will create an original music and sound direction for audio work; ACE-Step 1.5 XL Turbo will generate the selected cues locally."
+
+
 def _requires_initial_art_direction(category: str) -> bool:
     """Ask only when the initial product category intrinsically needs art assets."""
 
@@ -853,8 +879,13 @@ def create_initial_brief(path: Path, *, project_name: str, force: bool = False) 
         print("Leave this blank and Gemma 4 12B will create an original art direction for asset work.")
         art_direction_input = " ".join(input("> ").split())
         art_direction = _record_initial_art_direction(path.parent, project_slug, art_direction_input)
+        print("\nOptional music and sound direction:")
+        _print_example("Warm chamber strings and wooden flutes for exploration; crisp hand percussion for battle; gentle, seamless 30-second menu loop; no vocals.")
+        print("Leave this blank and Gemma 4 12B will create an original audio direction; ACE-Step 1.5 XL Turbo will generate required cues locally.")
+        audio_direction = _record_initial_audio_direction(path.parent, " ".join(input("> ").split()))
     else:
         art_direction = "- Not configured initially: this product category does not inherently require generated art assets. Any later asset-required R-series runbook must configure a product-specific art direction before invoking the asset lane."
+        audio_direction = "- Not configured initially: any later audio-required R-series runbook must configure a product-specific audio direction before invoking the audio lane."
     values = {
         "project_name": project_name,
         "project_slug": project_slug,
@@ -877,6 +908,7 @@ def create_initial_brief(path: Path, *, project_name: str, force: bool = False) 
         "support": support,
         "references": references,
         "art_direction": art_direction,
+        "audio_direction": audio_direction,
         "open_decisions": "- Infer suitable technical services, including analytics, from the product brief and selected platforms.\n- Infer remaining product decisions from the functional references unless they conflict with an explicit requirement.\n- Record only genuine ambiguities that cannot be resolved safely from the available context.",
     }
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -909,11 +941,13 @@ def create_initial_brief_non_interactive(
         shared = "\n".join(f"- {item}" for item in _game_shared_requirement_options(["Role-playing game (RPG)"]))
         details = {target: _game_target_requirements(target, ["Role-playing game (RPG)"]) for target in selected_targets}
         art = _record_initial_art_direction(path.parent, slug, art_direction)
+        audio = _record_initial_audio_direction(path.parent, "")
     else:
         users, outcome, first_session = f"- {profile['audiences'][0]}", profile["outcomes"][0], profile["first_sessions"][0]
         shared = "\n".join(f"- {item}" for item in _application_shared_requirements(category))
         details = {target: "\n".join(f"- {item}" for item in _application_target_requirement_options(target)) for target in selected_targets}
         art = "- Not configured initially; later asset-required R-series work must configure it."
+        audio = "- Not configured initially; later audio-required R-series work must configure it."
     values = {
         "project_name": project_name, "project_slug": slug, "product": product.strip(), "category": category,
         "target_family": "Automated compatible profile", "game_characteristics": characteristics,
@@ -926,7 +960,7 @@ def create_initial_brief_non_interactive(
         "sync": "Use remote account-linked state with safe local cache where applicable.",
         "compliance": "Provide accessibility, localisation, privacy, and applicable platform requirements.",
         "support": "Support widely used devices and feasible slow-network behaviour.",
-        "references": references.strip(), "art_direction": art,
+        "references": references.strip(), "art_direction": art, "audio_direction": audio,
         "open_decisions": "- Resolve remaining decisions from the brief and references; record only genuine ambiguities.",
     }
     path.write_text(_render_initial_brief(values, selected_targets, details), encoding="utf-8")

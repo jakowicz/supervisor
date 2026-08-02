@@ -1,5 +1,5 @@
 {
-  "schema_version": 6,
+  "schema_version": 7,
   "migrations": [
     {
       "version": 1,
@@ -73,6 +73,24 @@
         "ART_DIRECTION_MODE": "gemma4_auto",
         "ART_DIRECTION_MODEL": "gemma4:12b",
         "ART_DIRECTION_BRIEF": ""
+      },
+      "rename": {}
+    },
+    {
+      "version": 7,
+      "description": "add opt-in local ACE-Step music and audio-generation workers",
+      "add": {
+        "ACE_STEP_API_URL": "http://127.0.0.1:8001",
+        "ACE_STEP_MODEL": "acestep-v15-xl-turbo",
+        "ACE_STEP_GENERATION_TIMEOUT_SECONDS": "1800",
+        "ACE_STEP_INFERENCE_STEPS": "8",
+        "AUDIO_GENERATOR_COMMAND": "./.venv/bin/python scripts/ace_audio_generator.py {task_file}",
+        "AUDIO_QA_COMMAND": "./.venv/bin/python scripts/audio_qa_worker.py {task_file}",
+        "AUDIO_STYLE_NAME": "original product audio",
+        "AUDIO_STYLE_PROMPT": "original instrumental product music, clear looping structure, no vocals, no recognisable melody",
+        "AUDIO_DIRECTION_MODE": "gemma4_auto",
+        "AUDIO_DIRECTION_MODEL": "gemma4:12b",
+        "AUDIO_DIRECTION_BRIEF": ""
       },
       "rename": {}
     }

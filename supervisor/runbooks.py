@@ -64,6 +64,29 @@ def load_task(path: Path) -> Task:
             raise ValueError(f"{path} requires assets but has no asset_ids.")
         if metadata["asset_impact"] == "not_applicable" and declared_assets:
             raise ValueError(f"{path} declares asset_ids but asset_impact is not_applicable.")
+        audio_metadata = {"audio_impact", "audio_ids", "audio_brief", "audio_duration_seconds", "audio_loop", "audio_style_version"}
+        missing_audio_metadata = audio_metadata - metadata.keys()
+        if missing_audio_metadata:
+            raise ValueError(
+                f"{path} is an R-series runbook and must declare audio metadata: "
+                f"{', '.join(sorted(missing_audio_metadata))}"
+            )
+        if metadata["audio_impact"] not in {"required", "not_applicable"}:
+            raise ValueError(f"{path} has invalid audio_impact; use required or not_applicable.")
+        declared_audio = [audio_id.strip() for audio_id in metadata["audio_ids"].split(",") if audio_id.strip()]
+        if metadata["audio_impact"] == "required":
+            if not declared_audio or not metadata["audio_brief"].strip():
+                raise ValueError(f"{path} requires audio but has no audio_ids or audio_brief.")
+            try:
+                duration = int(metadata["audio_duration_seconds"])
+            except ValueError as error:
+                raise ValueError(f"{path} has invalid audio_duration_seconds.") from error
+            if duration < 1:
+                raise ValueError(f"{path} requires audio_duration_seconds greater than zero.")
+            if metadata["audio_loop"] not in {"required", "not_required"}:
+                raise ValueError(f"{path} has invalid audio_loop; use required or not_required.")
+        elif declared_audio or metadata["audio_brief"].strip() or metadata["audio_duration_seconds"].strip() not in {"", "0"} or metadata["audio_loop"] not in {"", "not_applicable"}:
+            raise ValueError(f"{path} declares audio fields but audio_impact is not_applicable.")
     criteria: list[str] = []
     current: list[str] = []
     for line in _section(document, "Acceptance criteria").splitlines():
@@ -91,6 +114,12 @@ def load_task(path: Path) -> Task:
         asset_brief=metadata.get("asset_brief", ""),
         asset_ids=[asset_id.strip() for asset_id in metadata.get("asset_ids", "").split(",") if asset_id.strip()],
         visual_style_version=metadata.get("visual_style_version", ""),
+        audio_impact=metadata.get("audio_impact", "not_applicable"),
+        audio_brief=metadata.get("audio_brief", ""),
+        audio_ids=[audio_id.strip() for audio_id in metadata.get("audio_ids", "").split(",") if audio_id.strip()],
+        audio_duration_seconds=int(metadata.get("audio_duration_seconds", "0") or 0),
+        audio_loop=metadata.get("audio_loop", "not_applicable"),
+        audio_style_version=metadata.get("audio_style_version", ""),
         source_specifications=[value.strip() for value in metadata.get("source_specifications", "").split(",") if value.strip()],
         source_catalogue_ids=[value.strip() for value in metadata.get("source_catalogue_ids", "").split(",") if value.strip()],
         authoring_batch=metadata.get("authoring_batch", ""),

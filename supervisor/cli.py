@@ -24,7 +24,7 @@ from .storage import RunStore
 
 
 START_STAGES = (
-    "prepare", "art_director", "asset_generator", "asset_finisher", "asset_qa",
+    "prepare", "art_director", "asset_generator", "asset_finisher", "asset_qa", "audio_director", "audio_generator", "audio_qa",
     "qwen", "openhands", "codex", "precheck", "codex_final", "test", "browser",
     "visual_review", "completion_audit", "git_publish",
 )
@@ -544,7 +544,7 @@ def _resume_stage(state: dict | None) -> str:
         return "prepare"
     candidate = str(state.get("next_action", "prepare"))
     return candidate if candidate in {
-        "prepare", "art_director", "asset_generator", "asset_finisher", "asset_qa", "qwen", "openhands", "codex", "codex_final", "precheck", "test", "browser",
+        "prepare", "art_director", "asset_generator", "asset_finisher", "asset_qa", "audio_director", "audio_generator", "audio_qa", "qwen", "openhands", "codex", "codex_final", "precheck", "test", "browser",
         "visual_review", "completion_audit", "git_publish", "user_review",
     } else "prepare"
 
