@@ -96,7 +96,7 @@ def test_preparing_named_project_workspace_owns_env_and_state(tmp_path: Path):
 
     assert (workspace / ".state").is_dir()
     env = (workspace / ".env").read_text(encoding="utf-8")
-    assert "SUPERVISOR_REPO_ROOT=.." in env
+    assert "SUPERVISOR_REPO_ROOT=../.." in env
     assert "SUPERVISOR_DATABASE_PATH=.state/supervisor.sqlite3" in env
 
 

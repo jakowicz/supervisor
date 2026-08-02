@@ -747,9 +747,11 @@ def _prepare_project_workspace(workspace: Path) -> None:
     if not secrets_example.exists():
         secrets_example.write_text((template_root / ".secrets.env.example").read_text(encoding="utf-8"), encoding="utf-8")
     _set_env_values(config, {
-        # Factory F-series files still operate on the parent repository while
-        # all generated-project state remains isolated in this workspace.
-        "SUPERVISOR_REPO_ROOT": "..",
+        # Factory F-series files operate in the repository that contains the
+        # `projects/` directory.  A project workspace is
+        # `<repository>/projects/<project>`, so two parent levels are needed;
+        # its state remains isolated inside the workspace.
+        "SUPERVISOR_REPO_ROOT": "../..",
         "SUPERVISOR_DATABASE_PATH": ".state/supervisor.sqlite3",
     })
 

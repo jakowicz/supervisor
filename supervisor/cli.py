@@ -125,7 +125,7 @@ given for that task explicitly.""",
         # A generated project owns its settings and state. Load its .env after
         # the factory default so it can deliberately override generic values.
         project_root = load_project_environment(package_root, env_file=project_workspace / ".env", override=True)
-        repo_root = project_path(os.getenv("SUPERVISOR_REPO_ROOT", ".."), project_root)
+        repo_root = project_path(os.getenv("SUPERVISOR_REPO_ROOT", "../.."), project_root)
         database_path = project_path(os.getenv("SUPERVISOR_DATABASE_PATH", ".state/supervisor.sqlite3"), project_root)
         if not any((arguments.task_range, arguments.run_all, arguments.run_initial)):
             arguments.run_all = True
