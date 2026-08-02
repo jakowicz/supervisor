@@ -58,6 +58,25 @@ def test_project_slug_is_safe_for_a_workspace_path():
     assert manage._project_slug("Final Fantasy V: Reborn!") == "final-fantasy-v-reborn"
 
 
+def test_project_statuses_reports_progress_and_resume_command_inputs(tmp_path: Path):
+    projects = tmp_path / "projects"
+    workspace = projects / "task-app"
+    workspace.mkdir(parents=True)
+    (workspace / "INITIAL.md").write_text("# Brief\n", encoding="utf-8")
+    factory = tmp_path / "runbooks"
+    factory.mkdir()
+    (factory / "F001.md").write_text(
+        "---\ntask_id: F001\nsequence: 1\ntitle: Factory\nbrowser_impact: not_applicable\nplaywright_spec:\n---\n\n## Objective\n\nDo it.\n\n## Acceptance criteria\n\n- Done.\n",
+        encoding="utf-8",
+    )
+
+    status = manage.project_statuses(projects, factory)[0]
+
+    assert status["name"] == "task-app"
+    assert status["phase"] == "F-series factory"
+    assert status["next"] == "F001"
+
+
 def test_choose_many_fallback_accepts_multiple_target_systems(monkeypatch):
     answers = iter(["1, 3, 2, 3"])
     monkeypatch.setattr("builtins.input", lambda _prompt: next(answers))
@@ -87,6 +106,15 @@ def test_game_target_requirement_options_include_rpg_and_console_needs():
     assert "Controller-first input, system navigation, and player profile handling" in options
     assert "Long-session save, checkpoint, and recovery rules" in options
     assert "Touch controls and orientation rules" not in options
+
+
+def test_selected_bullets_combines_presets_and_optional_detail(monkeypatch):
+    monkeypatch.setattr(manage, "_choose_many", lambda *_args: ["Accessible controls"])
+    monkeypatch.setattr("builtins.input", lambda _prompt: "Custom requirement")
+
+    selected = manage._selected_bullets("Requirements", ("Accessible controls",), other_example="Example")
+
+    assert selected == "- Accessible controls\n- Other: Custom requirement"
 
 
 def test_initialise_project_scaffolds_a_safe_empty_project(monkeypatch, tmp_path: Path):

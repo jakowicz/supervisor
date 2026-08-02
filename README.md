@@ -386,6 +386,25 @@ evidence, and cadence in that command.
 
 ## Runbooks
 
+### Named project workspaces
+
+For a runbook factory that stores briefs and generated work under `projects/`,
+run the complete project workflow with:
+
+```zsh
+supervisor-run --project my-project
+```
+
+It reads `projects/my-project/INITIAL.md`, runs the factory, follows only that
+workspace's child collections, and keeps durable factory state in
+`projects/my-project/.supervisor/factory.sqlite3`. Repeating the same command
+skips accepted tasks and resumes the first unfinished task. List all named
+workspaces, their phase, progress, next task, and resume command with:
+
+```zsh
+supervisor projects
+```
+
 The source batch is split into one immutable task contract per file under
 `../../runbooks/`. The supervisor loads it automatically by ID, so there is no
 need to retype the objective or acceptance criteria:

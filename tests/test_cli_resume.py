@@ -5,8 +5,9 @@ import pytest
 from pathlib import Path
 
 from supervisor import cli
-from supervisor.cli import _can_recover_qwen, _collection_runbooks, _completion_banner, _expand_task_range, _initial_document, _project_workspace, _qwen_session_to_resume, _recovered_qwen_event, _resume_stage, _run_registered_collections, _run_summary, _should_skip_accepted_task
+from supervisor.cli import _can_recover_qwen, _collection_runbooks, _completion_banner, _expand_task_range, _initial_document, _project_workspace, _qwen_session_to_resume, _recovered_qwen_event, _resume_stage, _run_collection_until_complete, _run_registered_collections, _run_summary, _should_skip_accepted_task
 from supervisor.models import NextStep, RunEvent, Status, Task, TaskRun, WorkerResult
+from supervisor.storage import RunStore
 
 
 def test_resume_starts_at_the_saved_next_stage():
@@ -182,6 +183,24 @@ def test_project_option_runs_the_factory_with_isolated_state(monkeypatch, tmp_pa
     assert calls[0][3] == workspace / ".supervisor" / "factory.sqlite3"
     assert "Build a task app." in calls[0][4]
     assert calls[1][3] == workspace
+
+
+def test_interrupted_project_factory_resumes_the_first_unaccepted_task(monkeypatch, tmp_path: Path):
+    factory = tmp_path / "runbooks"
+    factory.mkdir()
+    template = "---\ntask_id: {task_id}\nsequence: {sequence}\ntitle: Task\nbrowser_impact: not_applicable\nplaywright_spec:\n---\n\n## Objective\n\nDo it.\n\n## Acceptance criteria\n\n- Done.\n"
+    (factory / "F001.md").write_text(template.format(task_id="F001", sequence=1), encoding="utf-8")
+    (factory / "F002.md").write_text(template.format(task_id="F002", sequence=2), encoding="utf-8")
+    database = tmp_path / "projects" / "task-app" / ".supervisor" / "factory.sqlite3"
+    store = RunStore(database)
+    store.claim_task("F001", "interrupted-run", 0)
+    store.abandon_task("F001", "interrupted-run", "Stopped while implementing F001")
+    store.close()
+    batches = []
+    monkeypatch.setattr(cli, "_run_task_range", lambda runbooks, *_args: batches.append(runbooks) or False)
+
+    assert _run_collection_until_complete(factory, False, False, database, "# Brief") is False
+    assert [path.stem for path in batches[0]] == ["F001", "F002"]
 
 
 def test_initial_document_uses_a_generated_project_brief_when_no_local_initial_exists(tmp_path: Path):

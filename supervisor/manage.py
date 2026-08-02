@@ -8,6 +8,7 @@ import json
 import os
 import re
 import shutil
+import sqlite3
 import subprocess
 import sys
 import tempfile
@@ -18,6 +19,8 @@ from urllib.error import URLError
 from urllib.request import urlopen
 
 from dotenv import dotenv_values
+
+from .runbooks import load_task
 
 
 DEFAULTS = {
@@ -193,6 +196,18 @@ GAME_CHARACTERISTICS = (
     "Multiplayer or social game",
     "Single-player offline game",
 )
+GAME_AUDIENCES = ("Casual players", "Core/hobby players", "Children and families", "Teen players", "Adult players", "Accessibility-first players")
+GAME_PRIMARY_OUTCOMES = ("Play a satisfying core game loop", "Progress through a story or campaign", "Compete with other players", "Create, collect, or customise", "Relax with short repeatable sessions")
+GAME_FIRST_SESSION_SUCCESSES = ("Complete onboarding and play the core loop", "Finish a first level, battle, puzzle, or quest", "Create a character or save file", "Understand controls and choose accessibility settings")
+GAME_FIRST_RELEASE_CAPABILITIES = ("Playable core loop", "Onboarding and tutorial", "Save/load and progression", "Settings and accessibility", "Audio and visual feedback", "Content/level delivery", "Crash/error recovery")
+GAME_DEFERRED_CAPABILITIES = ("Online multiplayer", "Social features and communities", "Live events or seasonal content", "User-generated content", "Advanced analytics or monetisation", "Additional platforms")
+COMMON_CONSTRAINTS = ("Accessibility support", "Privacy and data-minimisation", "Offline or unreliable-network support", "Performance and download-size budget", "Limited budget or delivery date", "Existing repository or technology constraint", "Third-party service integration")
+TECHNOLOGY_CONSTRAINTS = ("Use an existing repository", "Use a specified framework or engine", "No paid infrastructure or services", "Must integrate with an existing API or backend", "No fixed technology constraint")
+GAME_NON_GOALS = ("No copied branding, assets, text, layouts, or distinctive interactions", "No multiplayer in the first release", "No in-app purchases in the first release", "No account system in the first release", "No live-service operations in the first release")
+PLATFORM_STRATEGIES = ("Shared core with platform-specific input and UI", "One primary platform first; other selected platforms follow", "Feature parity across selected platforms", "Platform-specific companion experiences")
+SYNC_POLICIES = ("Local save only", "Cloud sync when signed in", "Offline-first with conflict resolution", "Online-only shared state")
+COMMON_COMPLIANCE = ("WCAG-style accessibility", "Localisation support", "Privacy consent and data controls", "Age rating or parental controls", "Store certification and submission requirements")
+SUPPORT_TARGETS = ("Latest supported OS/browser versions", "Current and previous major OS/browser versions", "Phone, tablet, desktop, and low-end device coverage", "Slow or offline network conditions")
 
 RUNBOOK_TEMPLATE = """---
 task_id: T001
@@ -252,19 +267,40 @@ def _project_type_prompt(default: str = "documents") -> str:
         print("Choose 'game' or 'documents'.")
 
 
-def _required(label: str) -> str:
+def _required(label: str, *, example: str | None = None) -> str:
+    if example:
+        print(f"Example: {example}")
     while not (value := input(f"{label}: ").strip()):
         print("This field is required.")
     return value
 
 
-def _multiline(label: str) -> str:
+def _multiline(label: str, *, example: str | None = None) -> str:
+    if example:
+        print(f"Examples: {example}")
     print(f"{label} (enter one item per line; enter a single '.' when finished):")
     lines: list[str] = []
     while (line := input("> ").strip()) != ".":
         if line:
             lines.append(line)
     return "\n".join(f"- {line}" for line in lines) or "- None recorded."
+
+
+def _selected_bullets(label: str, options: tuple[str, ...], *, other_example: str) -> str:
+    """Choose common answers first, then allow a concise product-specific note."""
+
+    selected = _choose_many(label, options)
+    print(f"Optional other detail. Example: {other_example}")
+    other = input("Other detail (press Enter to skip): ").strip()
+    lines = [f"- {item}" for item in selected]
+    if other:
+        lines.append(f"- Other: {other}")
+    return "\n".join(lines) or "- None selected yet."
+
+
+def _choose_one_with_example(label: str, options: tuple[str, ...], *, example: str) -> str:
+    print(f"Example: {example}")
+    return _choose_one(label, options)
 
 
 def _choose_one(label: str, options: tuple[str, ...]) -> str:
@@ -523,31 +559,121 @@ def create_initial_brief(path: Path, *, project_name: str, force: bool = False) 
             for target in targets
         }
     )
+    if category == "Game":
+        users = _selected_bullets("Select the players this game is for", GAME_AUDIENCES, other_example="Players who enjoy 20-minute tactical sessions.")
+        primary_outcome = _choose_one_with_example("Select the primary player outcome", GAME_PRIMARY_OUTCOMES, example="Progress through a story or campaign.")
+        first_session = _choose_one_with_example("Select a successful first session", GAME_FIRST_SESSION_SUCCESSES, example="Finish a first battle and understand how saving works.")
+        capabilities = _selected_bullets("Select first-release game capabilities", GAME_FIRST_RELEASE_CAPABILITIES, other_example="Turn-based combat with a small party.")
+        deferred = _selected_bullets("Select deferred game capabilities", GAME_DEFERRED_CAPABILITIES, other_example="New-game-plus mode.")
+        technology = _selected_bullets("Select technology or delivery constraints", TECHNOLOGY_CONSTRAINTS, other_example="Build with Flutter and Flame in the existing repository.")
+        constraints = _selected_bullets("Select product constraints that apply", COMMON_CONSTRAINTS, other_example="Must work without an account during the first release.")
+        non_goals = _selected_bullets("Select explicit first-release non-goals", GAME_NON_GOALS, other_example="No procedurally generated levels.")
+        parity = _choose_one_with_example("Select the cross-platform delivery strategy", PLATFORM_STRATEGIES, example="Shared core with platform-specific input and UI.")
+        sync = _choose_one_with_example("Select the save and synchronisation policy", SYNC_POLICIES, example="Local save only.")
+        compliance = _selected_bullets("Select compliance and release requirements", COMMON_COMPLIANCE, other_example="PEGI age-rating submission.")
+        support = _selected_bullets("Select supported device and network conditions", SUPPORT_TARGETS, other_example="60 FPS target on iPhone 13 and newer.")
+    else:
+        users = _required("Who is it for", example="Independent workers who need to plan a personal backlog.")
+        primary_outcome = _required("What is their primary outcome", example="Capture, organise, and complete important work.")
+        first_session = _required("What makes the first useful session successful", example="They create, prioritise, and complete their first item.")
+        capabilities = _multiline("Required first-release capabilities", example="Create a task; group tasks into projects; mark a task complete.")
+        deferred = _multiline("Later or deferred capabilities", example="Shared team workspaces; billing; integrations.")
+        technology = _required("Technology and repository constraints", example="Use the existing TypeScript web application; no paid services.")
+        constraints = _selected_bullets("Select product constraints that apply", COMMON_CONSTRAINTS, other_example="Must work in a regulated healthcare environment.")
+        non_goals = _required("Explicitly excluded work", example="No team billing or marketplace in the first release.")
+        parity = _choose_one_with_example("Select the cross-platform delivery strategy", PLATFORM_STRATEGIES, example="Shared core with platform-specific input and UI.")
+        sync = _choose_one_with_example("Select the data synchronisation policy", SYNC_POLICIES, example="Offline-first with conflict resolution.")
+        compliance = _selected_bullets("Select compliance and release requirements", COMMON_COMPLIANCE, other_example="HIPAA review before launch.")
+        support = _selected_bullets("Select supported device and network conditions", SUPPORT_TARGETS, other_example="Modern evergreen browsers on 4G connections.")
     values = {
         "project_name": project_name,
         "project_slug": project_slug,
-        "product": _required("Describe what you are creating"),
+        "product": _required("Describe what you are creating", example="A turn-based fantasy role-playing game for short mobile and desktop sessions."),
         "category": category,
         "target_family": target_family,
         "game_characteristics": "\n".join(f"- [x] {item}" for item in game_characteristics) or "- Not specified.",
-        "users": _required("Who is it for"),
-        "primary_outcome": _required("What is their primary outcome"),
-        "first_session": _required("What makes the first useful session successful"),
-        "capabilities": _multiline("Required first-release capabilities"),
-        "deferred": _multiline("Later or deferred capabilities"),
-        "technology": _required("Technology and repository constraints"),
-        "constraints": _required("Privacy, security, accessibility, offline, integration, cost, and delivery constraints"),
-        "non_goals": _required("Explicitly excluded work"),
-        "parity": _required("Which capabilities are shared versus platform-specific"),
-        "sync": _required("Data synchronisation, offline, and conflict policy"),
-        "compliance": _required("Accessibility, localisation, privacy, store, or certification requirements"),
-        "support": _required("Minimum supported OS, browser, device class, and network condition"),
-        "references": _required("Functional references and their no-copy boundaries"),
-        "open_decisions": _multiline("Open decisions requiring approval"),
+        "users": users,
+        "primary_outcome": primary_outcome,
+        "first_session": first_session,
+        "capabilities": capabilities,
+        "deferred": deferred,
+        "technology": technology,
+        "constraints": constraints,
+        "non_goals": non_goals,
+        "parity": parity,
+        "sync": sync,
+        "compliance": compliance,
+        "support": support,
+        "references": _required("Functional references and their no-copy boundaries", example="Use Todoist for feature inspiration only; do not copy its brand, copy, visuals, or interaction details."),
+        "open_decisions": _multiline("Open decisions requiring approval", example="Choose analytics provider; decide whether guest accounts are allowed."),
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(_render_initial_brief(values, targets, target_details), encoding="utf-8")
     return path
+
+
+def _collection_progress(runbooks_directory: Path, database_path: Path) -> tuple[int, int, str | None]:
+    """Return accepted count, pending count, and the next runbook without creating state."""
+
+    runbooks = sorted(
+        (path for path in runbooks_directory.glob("*.md") if re.fullmatch(r"[A-Za-z]+\d+", path.stem)),
+        key=lambda path: (load_task(path).sequence, path.name),
+    ) if runbooks_directory.is_dir() else []
+    if not runbooks:
+        return 0, 0, None
+    states: dict[str, str] = {}
+    if database_path.is_file():
+        connection = sqlite3.connect(f"file:{database_path}?mode=ro", uri=True)
+        try:
+            states = dict(connection.execute("SELECT task_id, status FROM task_state"))
+        except sqlite3.OperationalError:
+            states = {}
+        finally:
+            connection.close()
+    accepted = sum(states.get(path.stem) == "accepted" for path in runbooks)
+    next_runbook = next((path.stem for path in runbooks if states.get(path.stem) != "accepted"), None)
+    return accepted, len(runbooks) - accepted, next_runbook
+
+
+def project_statuses(projects_directory: Path, factory_runbooks_directory: Path) -> list[dict[str, str | int]]:
+    """Summarise named runbook-factory workspaces using their durable state."""
+
+    if not projects_directory.is_dir():
+        return []
+    statuses: list[dict[str, str | int]] = []
+    for workspace in sorted(path for path in projects_directory.iterdir() if path.is_dir() and (path / "INITIAL.md").is_file()):
+        collections = (
+            ("R-series implementation", workspace / "runbooks", workspace / "runbooks" / ".supervisor" / "supervisor.sqlite3"),
+            ("B-series authoring", workspace / "authoring-runbooks", workspace / "authoring-runbooks" / ".supervisor" / "supervisor.sqlite3"),
+            ("F-series factory", factory_runbooks_directory, workspace / ".supervisor" / "factory.sqlite3"),
+        )
+        progress = [_collection_progress(*collection[1:]) for collection in collections]
+        accepted = sum(item[0] for item in progress)
+        pending = sum(item[1] for item in progress)
+        active = next(((label, item[2]) for (label, *_paths), item in zip(collections, progress) if item[2]), None)
+        phase = active[0] if active else ("Complete" if accepted else "Ready to start")
+        statuses.append({
+            "name": workspace.name,
+            "brief": str(workspace / "INITIAL.md"),
+            "phase": phase,
+            "accepted": accepted,
+            "pending": pending,
+            "next": active[1] if active else "None",
+        })
+    return statuses
+
+
+def print_projects(projects_directory: Path, factory_runbooks_directory: Path) -> None:
+    statuses = project_statuses(projects_directory, factory_runbooks_directory)
+    if not statuses:
+        print(f"No named project workspaces found in {projects_directory}.")
+        return
+    for status in statuses:
+        print(f"{status['name']}")
+        print(f"  Phase: {status['phase']}")
+        print(f"  Progress: {status['accepted']} accepted · {status['pending']} pending")
+        print(f"  Next: {status['next']}")
+        print(f"  Resume: supervisor-run --project {status['name']}")
 
 
 def ollama_models() -> list[str]:
@@ -1061,6 +1187,8 @@ def main() -> None:
       Create an empty project with a Supervisor checkout and starter runbooks.
   supervisor initial --force
       Ask for a project name and write projects/<project-name>/INITIAL.md.
+  supervisor projects
+      List named project workspaces, progress, next task, and resume commands.
   supervisor configure
       Review the local .env, including coding agents and stage order.
   supervisor update
@@ -1080,6 +1208,8 @@ supervisor-dashboard --serve to view the local dashboard.""",
     initial_parser.add_argument("--projects-dir", type=Path, default=DEFAULT_PROJECTS_DIRECTORY, help="Directory containing generated project workspaces (default: projects).")
     initial_parser.add_argument("--output", type=Path, help="Explicit brief path; normally omit this and let --project-name choose projects/<project-name>/INITIAL.md.")
     initial_parser.add_argument("--force", action="store_true", help="Replace an existing initial brief after collecting new answers.")
+    projects_parser = commands.add_parser("projects", help="List named runbook-factory projects and their durable progress.")
+    projects_parser.add_argument("--projects-dir", type=Path, default=DEFAULT_PROJECTS_DIRECTORY, help="Directory containing named project workspaces (default: projects).")
     migration_parser = commands.add_parser("env-migrate", help="Apply versioned, non-destructive .env migrations and record an audit log.")
     migration_parser.add_argument("--config", type=Path, default=Path(".env"), help="Project .env path (default: .env).")
     migration_parser.add_argument("--project-root", type=Path, help="Project root for .state/supervisor-env-migrations.log.")
@@ -1108,6 +1238,8 @@ supervisor-dashboard --serve to view the local dashboard.""",
         except ValueError as error:
             parser.error(str(error))
         print(f"Wrote initial project brief: {brief_path}")
+    if arguments.command == "projects":
+        print_projects(arguments.projects_dir.expanduser().resolve(), Path.cwd() / "runbooks")
     if arguments.command == "env-migrate":
         try:
             changes = migrate_env(arguments.config, project_root=arguments.project_root)
