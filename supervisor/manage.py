@@ -473,8 +473,7 @@ def _render_initial_brief(values: dict[str, str], targets: list[str], target_det
 
 This file is the source of truth for the document-producing collection. Later
 runbooks must preserve its scope and record unanswered questions rather than
-inventing requirements. This brief belongs to the project workspace named below,
-not to the reusable factory runbooks.
+inventing requirements.
 
 ## Project workspace
 
