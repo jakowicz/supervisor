@@ -39,23 +39,25 @@ def test_wrapped_acceptance_bullets_are_loaded_in_full():
 
 
 def test_runbook_accepts_opt_in_asset_metadata(tmp_path):
-    path = tmp_path / "A001.md"
+    path = tmp_path / "R0002.md"
     path.write_text(
-        "---\ntask_id: A001\nsequence: 1\ntitle: Gate\nbrowser_impact: not_applicable\nplaywright_spec: \n"
-        "asset_impact: required\nasset_brief: docs/art/briefs/gate.md\nasset_ids: gate,gate_build\nvisual_style_version: project-v1\n---\n"
-        "# A001\n\n## Objective\n\nMake a gate.\n\n## Acceptance criteria\n\n- It is original.\n",
+        "---\ntask_id: R0002\nsequence: 1\ntitle: Gate\nbrowser_impact: not_applicable\nplaywright_spec: \n"
+        "asset_impact: required\nasset_brief: docs/art/briefs/gate.md\nasset_ids: gate,gate_build\nvisual_style_version: project-v1\nsource_specifications: specification/04-experience-contract.md#gate\nsource_catalogue_ids: IMP-WORLD-001\nauthoring_batch: B0001\nfactory_stages: F004,F012,F013\n---\n"
+        "# R0002\n\n## Objective\n\nMake a gate.\n\n## Acceptance criteria\n\n- It is original.\n",
         encoding="utf-8",
     )
     task = load_task(path)
     assert task.asset_impact == "required"
     assert task.asset_ids == ["gate", "gate_build"]
+    assert task.authoring_batch == "B0001"
+    assert task.source_catalogue_ids == ["IMP-WORLD-001"]
     assert task.visual_style_version == "project-v1"
 
 
 def test_r_series_runbook_must_explicitly_assess_assets(tmp_path):
     path = tmp_path / "R0001.md"
     path.write_text(
-        "---\ntask_id: R0001\nsequence: 1\ntitle: Missing asset assessment\nbrowser_impact: not_applicable\nplaywright_spec:\n---\n"
+        "---\ntask_id: R0001\nsequence: 1\ntitle: Missing asset assessment\nbrowser_impact: not_applicable\nplaywright_spec:\nsource_specifications: specification/02-feature-model.md#loop\nsource_catalogue_ids: IMP-LOOP-001\nauthoring_batch: B0001\nfactory_stages: F002,F012,F013\n---\n"
         "## Objective\n\nDo the work.\n\n## Acceptance criteria\n\n- The work is done.\n",
         encoding="utf-8",
     )
@@ -64,10 +66,22 @@ def test_r_series_runbook_must_explicitly_assess_assets(tmp_path):
         load_task(path)
 
 
+def test_r_series_runbook_must_declare_provenance(tmp_path):
+    path = tmp_path / "R0001.md"
+    path.write_text(
+        "---\ntask_id: R0001\nsequence: 1\ntitle: Missing provenance\nbrowser_impact: not_applicable\nplaywright_spec:\nasset_impact: not_applicable\nasset_ids:\n---\n"
+        "## Objective\n\nDo the work.\n\n## Acceptance criteria\n\n- The work is done.\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="must declare provenance metadata"):
+        load_task(path)
+
+
 def test_r_series_asset_task_requires_stable_asset_ids(tmp_path):
     path = tmp_path / "R0001.md"
     path.write_text(
-        "---\ntask_id: R0001\nsequence: 1\ntitle: Asset work\nbrowser_impact: not_applicable\nplaywright_spec:\nasset_impact: required\nasset_ids:\n---\n"
+        "---\ntask_id: R0001\nsequence: 1\ntitle: Asset work\nbrowser_impact: not_applicable\nplaywright_spec:\nasset_impact: required\nasset_ids:\nsource_specifications: specification/04-experience-contract.md#gate\nsource_catalogue_ids: IMP-WORLD-001\nauthoring_batch: B0001\nfactory_stages: F004,F012,F013\n---\n"
         "## Objective\n\nDo the work.\n\n## Acceptance criteria\n\n- The work is done.\n",
         encoding="utf-8",
     )

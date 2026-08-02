@@ -34,6 +34,22 @@ def load_task(path: Path) -> Task:
         raise ValueError(f"{path} is missing metadata: {', '.join(sorted(missing))}")
     is_r_series = re.fullmatch(r"R\d+", metadata["task_id"]) is not None
     if is_r_series:
+        provenance_metadata = {"source_specifications", "source_catalogue_ids", "authoring_batch", "factory_stages"}
+        missing_provenance_metadata = provenance_metadata - metadata.keys()
+        if missing_provenance_metadata:
+            raise ValueError(
+                f"{path} is an R-series runbook and must declare provenance metadata: "
+                f"{', '.join(sorted(missing_provenance_metadata))}"
+            )
+        source_specifications = [value.strip() for value in metadata["source_specifications"].split(",") if value.strip()]
+        source_catalogue_ids = [value.strip() for value in metadata["source_catalogue_ids"].split(",") if value.strip()]
+        factory_stages = [value.strip() for value in metadata["factory_stages"].split(",") if value.strip()]
+        if not source_specifications or not source_catalogue_ids or not factory_stages:
+            raise ValueError(f"{path} has incomplete R-series provenance metadata.")
+        if not re.fullmatch(r"B\d+", metadata["authoring_batch"]):
+            raise ValueError(f"{path} has invalid authoring_batch; use an ID such as B0001.")
+        if any(not re.fullmatch(r"F\d+", stage) for stage in factory_stages):
+            raise ValueError(f"{path} has invalid factory_stages; use comma-separated F-series IDs.")
         asset_metadata = {"asset_impact", "asset_ids"}
         missing_asset_metadata = asset_metadata - metadata.keys()
         if missing_asset_metadata:
@@ -75,4 +91,8 @@ def load_task(path: Path) -> Task:
         asset_brief=metadata.get("asset_brief", ""),
         asset_ids=[asset_id.strip() for asset_id in metadata.get("asset_ids", "").split(",") if asset_id.strip()],
         visual_style_version=metadata.get("visual_style_version", ""),
+        source_specifications=[value.strip() for value in metadata.get("source_specifications", "").split(",") if value.strip()],
+        source_catalogue_ids=[value.strip() for value in metadata.get("source_catalogue_ids", "").split(",") if value.strip()],
+        authoring_batch=metadata.get("authoring_batch", ""),
+        factory_stages=[value.strip() for value in metadata.get("factory_stages", "").split(",") if value.strip()],
     )

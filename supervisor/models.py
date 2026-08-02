@@ -83,6 +83,12 @@ class Task(BaseModel):
     asset_brief: str = ""
     asset_ids: list[str] = Field(default_factory=list)
     visual_style_version: str = ""
+    # R-series contracts retain a compact, machine-readable trail back to the
+    # canonical product decision and bounded authoring batch that created them.
+    source_specifications: list[str] = Field(default_factory=list)
+    source_catalogue_ids: list[str] = Field(default_factory=list)
+    authoring_batch: str = ""
+    factory_stages: list[str] = Field(default_factory=list)
     # The graph sets this only for the independent Codex final-review stage.
     # Runbooks always remain implementation contracts and need not declare it.
     execution_mode: str = "implementation"
