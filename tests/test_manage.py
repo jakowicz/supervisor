@@ -1,6 +1,53 @@
+import sys
 from pathlib import Path
 
 from supervisor import manage
+
+
+def test_interactive_init_asks_for_project_type_immediately_after_project_path(monkeypatch, tmp_path: Path):
+    prompts: list[str] = []
+    project = tmp_path / "new-project"
+
+    monkeypatch.setattr(sys, "argv", ["supervisor", "init", "--no-install", "--no-observability"])
+    monkeypatch.setattr(manage, "_project_path_prompt", lambda _requested: prompts.append("project_path") or project)
+    monkeypatch.setattr(manage, "_project_type_prompt", lambda: prompts.append("project_type") or "game")
+    monkeypatch.setattr(manage, "initialise_project", lambda *_args, **kwargs: prompts.append(f"initialise:{kwargs['project_type']}"))
+    monkeypatch.setattr(manage, "configure", lambda _path: prompts.append("configure"))
+
+    manage.main()
+
+    assert prompts == ["project_path", "project_type", "initialise:game", "configure"]
+
+
+def test_initial_brief_renderer_always_includes_responsive_web_and_pwa():
+    values = {
+        "product": "A task app",
+        "category": "Consumer application",
+        "users": "People",
+        "primary_outcome": "Organise work",
+        "first_session": "A saved task",
+        "capabilities": "- Capture tasks",
+        "deferred": "- Team workspaces",
+        "technology": "No constraint",
+        "constraints": "Accessible",
+        "non_goals": "No billing",
+        "parity": "Shared core",
+        "sync": "Offline first",
+        "compliance": "WCAG",
+        "support": "Modern browsers",
+        "references": "Capabilities only; no copied expression.",
+        "open_decisions": "- Branding",
+    }
+
+    rendered = manage._render_initial_brief(
+        values,
+        [*manage.DEFAULT_WEB_TARGETS, "iPhone (iOS)"],
+        {"Responsive public web application": "Keyboard and touch.", "Progressive web app (PWA)": "Installable.", "iPhone (iOS)": "Touch."},
+    )
+
+    assert "- [x] Responsive public web application" in rendered
+    assert "- [x] Progressive web app (PWA)" in rendered
+    assert "### iPhone (iOS)" in rendered
 
 
 def test_initialise_project_scaffolds_a_safe_empty_project(monkeypatch, tmp_path: Path):
@@ -24,7 +71,26 @@ def test_initialise_project_scaffolds_a_safe_empty_project(monkeypatch, tmp_path
     ]
     assert (project / ".gitignore").read_text(encoding="utf-8") == "/.state/\n"
     assert (project / "runbooks" / "TEMPLATE.md").read_text(encoding="utf-8") == manage.RUNBOOK_TEMPLATE
-    assert (project / "supervisor" / ".env").read_text(encoding="utf-8") == "SUPERVISOR_REPO_ROOT=..\n"
+    config = (project / "supervisor" / ".env").read_text(encoding="utf-8")
+    assert "SUPERVISOR_REPO_ROOT=.." in config
+    assert "SUPERVISOR_CODING_AGENTS=codex" in config
+    assert "SUPERVISOR_AGENT_ORDER=codex" in config
+
+
+def test_initialise_project_applies_the_game_pipeline_profile(monkeypatch, tmp_path: Path):
+    def fake_run(command: list[str], *, cwd: Path | None = None) -> None:
+        if command[:3] == ["git", "submodule", "add"]:
+            (cwd / "supervisor").mkdir()
+            (cwd / "supervisor" / ".env.example").write_text("", encoding="utf-8")
+
+    monkeypatch.setattr(manage, "_run", fake_run)
+    project = tmp_path / "game-project"
+
+    manage.initialise_project(project, install=False, observability=False, project_type="game")
+
+    config = (project / "supervisor" / ".env").read_text(encoding="utf-8")
+    assert "SUPERVISOR_CODING_AGENTS=codex" in config
+    assert "SUPERVISOR_AGENT_ORDER=codex,test,browser,visual_review,completion_audit,git_publish" in config
 
 
 def test_initialise_project_rejects_non_empty_directory(tmp_path: Path):

@@ -52,8 +52,65 @@ DEFAULTS = {
 }
 
 DEFAULT_SUPERVISOR_URL = "git@github.com:jakowicz/supervisor.git"
+DEFAULT_INITIAL_BRIEF_PATH = Path(__file__).resolve().parents[2] / "runbooks" / "INITIAL.md"
 MINIMUM_PYTHON_VERSION = (3, 10)
 CODEX_MODELS = ("gpt-5.6-terra", "gpt-5.6-sol")
+PROJECT_TYPE_DEFAULTS = {
+    "game": {
+        "SUPERVISOR_CODING_AGENTS": "codex",
+        "SUPERVISOR_AGENT_ORDER": "codex,test,browser,visual_review,completion_audit,git_publish",
+    },
+    "documents": {
+        "SUPERVISOR_CODING_AGENTS": "codex",
+        "SUPERVISOR_AGENT_ORDER": "codex",
+    },
+}
+PRODUCT_CATEGORIES = (
+    "Consumer application",
+    "Business / internal application",
+    "Game",
+    "Document, planning, or content system",
+    "Operating-system or device utility",
+    "Developer tool or platform",
+    "Service, API, or background system",
+    "Other",
+)
+TARGET_SYSTEMS = (
+    "Android phone",
+    "Android tablet / ChromeOS",
+    "iPhone (iOS)",
+    "iPad (iPadOS)",
+    "Wear OS",
+    "watchOS",
+    "Desktop web application",
+    "Embedded web / WebView surface",
+    "Browser extension",
+    "macOS",
+    "Windows",
+    "Linux",
+    "Apple TV / tvOS",
+    "Android TV / Google TV",
+    "Amazon Fire TV",
+    "Samsung Smart TV / Tizen",
+    "LG Smart TV / webOS",
+    "Roku",
+    "Hisense / VIDAA",
+    "PlayStation",
+    "Xbox",
+    "Nintendo Switch",
+    "PC game storefronts",
+    "Meta Quest / virtual reality",
+    "Augmented or mixed reality",
+    "Kiosk, point-of-sale, or dedicated hardware",
+    "Automotive display / Android Automotive / CarPlay",
+    "Voice assistant or conversational interface",
+    "Backend API",
+    "Background workers / scheduled jobs",
+    "Admin or operations portal",
+    "Third-party partner API / SDK",
+    "Data import, export, or migration tool",
+)
+DEFAULT_WEB_TARGETS = ("Responsive public web application", "Progressive web app (PWA)")
 
 RUNBOOK_TEMPLATE = """---
 task_id: T001
@@ -101,6 +158,160 @@ def _yes_no(label: str, default: bool) -> bool:
     suffix = "Y/n" if default else "y/N"
     value = input(f"{label} [{suffix}]: ").strip().lower()
     return default if not value else value in {"y", "yes"}
+
+
+def _project_type_prompt(default: str = "documents") -> str:
+    """Choose the starter execution profile without preventing later edits."""
+
+    while True:
+        value = input("Project type [game/documents] [documents]: ").strip().lower() or default
+        if value in PROJECT_TYPE_DEFAULTS:
+            return value
+        print("Choose 'game' or 'documents'.")
+
+
+def _required(label: str) -> str:
+    while not (value := input(f"{label}: ").strip()):
+        print("This field is required.")
+    return value
+
+
+def _multiline(label: str) -> str:
+    print(f"{label} (enter one item per line; enter a single '.' when finished):")
+    lines: list[str] = []
+    while (line := input("> ").strip()) != ".":
+        if line:
+            lines.append(line)
+    return "\n".join(f"- {line}" for line in lines) or "- None recorded."
+
+
+def _choose_one(label: str, options: tuple[str, ...]) -> str:
+    print(f"\n{label}:")
+    for number, option in enumerate(options, start=1):
+        print(f"  {number}. {option}")
+    while True:
+        value = input("Choose one number: ").strip()
+        if value.isdigit() and 1 <= int(value) <= len(options):
+            return options[int(value) - 1]
+        print("Enter one of the listed numbers.")
+
+
+def _choose_many(label: str, options: tuple[str, ...]) -> list[str]:
+    print(f"\n{label} (comma-separated numbers; blank for no additional targets):")
+    for number, option in enumerate(options, start=1):
+        print(f"  {number}. {option}")
+    while True:
+        value = input("Choose numbers: ").strip()
+        if not value:
+            return []
+        try:
+            selected = [int(item.strip()) for item in value.split(",")]
+        except ValueError:
+            selected = []
+        if selected and all(1 <= item <= len(options) for item in selected):
+            return [options[item - 1] for item in dict.fromkeys(selected)]
+        print("Enter valid comma-separated numbers, or leave blank.")
+
+
+def _render_initial_brief(values: dict[str, str], targets: list[str], target_details: dict[str, str]) -> str:
+    target_lines = "\n".join(f"- [x] {target}" for target in targets)
+    detail_lines = "\n".join(f"### {target}\n\n{detail}" for target, detail in target_details.items())
+    return f"""# Initial project brief
+
+This file is the source of truth for the document-producing collection. Later
+runbooks must preserve its scope and record unanswered questions rather than
+inventing requirements.
+
+## What are we creating?
+
+{values['product']}
+
+## Product category
+
+- [x] {values['category']}
+
+## Who is it for, and what must it help them do?
+
+- Intended users: {values['users']}
+- Their primary outcome: {values['primary_outcome']}
+- What makes the first useful session successful: {values['first_session']}
+
+## Required first-release capabilities
+
+{values['capabilities']}
+
+## Later or deferred capabilities
+
+{values['deferred']}
+
+## Target systems and delivery surfaces
+
+Responsive public web application and Progressive web app (PWA) are included by
+default. Additional selected targets:
+
+{target_lines}
+
+## Per-target requirements
+
+{detail_lines}
+
+## Constraints and non-goals
+
+- Technology and repository constraints: {values['technology']}
+- Privacy, security, accessibility, offline, integration, cost, and delivery constraints: {values['constraints']}
+- Explicitly excluded work: {values['non_goals']}
+
+## Cross-platform product decisions
+
+- Shared versus platform-specific capabilities: {values['parity']}
+- Data synchronisation, offline, and conflict policy: {values['sync']}
+- Accessibility, localisation, privacy, parental-control, store, or certification requirements: {values['compliance']}
+- Minimum supported OS, browser, device class, and network condition: {values['support']}
+
+## Reference boundaries
+
+{values['references']}
+
+## Open decisions
+
+{values['open_decisions']}
+"""
+
+
+def create_initial_brief(path: Path, *, force: bool = False) -> Path:
+    """Interactively collect a complete project brief and write INITIAL.md."""
+
+    path = path.expanduser().resolve()
+    if path.exists() and not force:
+        raise ValueError(f"Initial brief already exists: {path}. Use --force to replace it.")
+    category = _choose_one("What type of product are you building", PRODUCT_CATEGORIES)
+    additional_targets = _choose_many("Select any additional target systems", TARGET_SYSTEMS)
+    targets = [*DEFAULT_WEB_TARGETS, *additional_targets]
+    target_details = {
+        target: _required(f"Requirements for {target} (input, screens, offline, performance, release constraints)")
+        for target in targets
+    }
+    values = {
+        "product": _required("Describe what you are creating"),
+        "category": category,
+        "users": _required("Who is it for"),
+        "primary_outcome": _required("What is their primary outcome"),
+        "first_session": _required("What makes the first useful session successful"),
+        "capabilities": _multiline("Required first-release capabilities"),
+        "deferred": _multiline("Later or deferred capabilities"),
+        "technology": _required("Technology and repository constraints"),
+        "constraints": _required("Privacy, security, accessibility, offline, integration, cost, and delivery constraints"),
+        "non_goals": _required("Explicitly excluded work"),
+        "parity": _required("Which capabilities are shared versus platform-specific"),
+        "sync": _required("Data synchronisation, offline, and conflict policy"),
+        "compliance": _required("Accessibility, localisation, privacy, store, or certification requirements"),
+        "support": _required("Minimum supported OS, browser, device class, and network condition"),
+        "references": _required("Functional references and their no-copy boundaries"),
+        "open_decisions": _multiline("Open decisions requiring approval"),
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(_render_initial_brief(values, targets, target_details), encoding="utf-8")
+    return path
 
 
 def ollama_models() -> list[str]:
@@ -470,6 +681,7 @@ def initialise_project(
     python: str | None = None,
     install: bool = True,
     observability: bool = True,
+    project_type: str = "documents",
     langfuse_email: str | None = None,
     langfuse_name: str | None = None,
     langfuse_password: str | None = None,
@@ -479,6 +691,8 @@ def initialise_project(
     project_root = project_root.expanduser().resolve()
     if project_root.exists() and any(project_root.iterdir()):
         raise ValueError(f"Project directory is not empty: {project_root}")
+    if project_type not in PROJECT_TYPE_DEFAULTS:
+        raise ValueError(f"Unknown project type: {project_type}")
     project_root.mkdir(parents=True, exist_ok=True)
 
     print(f"Initialising Git project: {project_root}")
@@ -497,6 +711,11 @@ def initialise_project(
     if example.is_file() and not config.exists():
         config.write_text(example.read_text(encoding="utf-8"), encoding="utf-8")
         config.chmod(0o600)
+    if config.exists():
+        with config.open("a", encoding="utf-8") as output:
+            output.write("\n# Project-type starter profile; change during `supervisor configure` if needed.\n")
+            for key, value in PROJECT_TYPE_DEFAULTS[project_type].items():
+                output.write(f"{key}={value}\n")
 
     if install:
         venv = project_root / "supervisor" / ".venv"
@@ -526,6 +745,9 @@ def main() -> None:
     commands = parser.add_subparsers(dest="command", required=True)
     configure_parser = commands.add_parser("configure", help="Interactively create or update an ignored .env configuration file.")
     configure_parser.add_argument("--config", type=Path, default=Path(".env"), help="Configuration file to write (default: .env).")
+    initial_parser = commands.add_parser("initial", help="Interactively create the project brief consumed by the first runbook.")
+    initial_parser.add_argument("--output", type=Path, default=DEFAULT_INITIAL_BRIEF_PATH, help="Brief path (default: <project>/runbooks/INITIAL.md).")
+    initial_parser.add_argument("--force", action="store_true", help="Replace an existing initial brief after collecting new answers.")
     init_parser = commands.add_parser("init", help="Interactively create and configure an empty Git project with the supervisor, runbooks, and shared Langfuse setup.")
     init_parser.add_argument("project", type=Path, nargs="?", help="Optional new or empty project directory; prompted for when omitted.")
     init_parser.add_argument("--supervisor-url", default=DEFAULT_SUPERVISOR_URL, help="Git URL for the supervisor submodule.")
@@ -533,11 +755,18 @@ def main() -> None:
     init_parser.add_argument("--no-install", action="store_true", help="Create files and submodule but skip virtualenv and dependency installation.")
     init_parser.add_argument("--no-observability", action="store_true", help="Do not reuse or start the shared local Langfuse setup.")
     init_parser.add_argument("--non-interactive", action="store_true", help="Use defaults and skip all setup prompts; intended for automation.")
+    init_parser.add_argument("--project-type", choices=tuple(PROJECT_TYPE_DEFAULTS), help="Starter pipeline profile; prompted for during interactive setup.")
     commands.add_parser("update", help="Fast-forward the current project's supervisor/ checkout from origin/main and reinstall its CLI tools.")
     commands.add_parser("upgrade", help="Fast-forward the checkout that provides this Supervisor CLI and reinstall its commands.")
     arguments = parser.parse_args()
     if arguments.command == "configure":
         configure(arguments.config.expanduser().resolve())
+    if arguments.command == "initial":
+        try:
+            brief_path = create_initial_brief(arguments.output, force=arguments.force)
+        except ValueError as error:
+            parser.error(str(error))
+        print(f"Wrote initial project brief: {brief_path}")
     if arguments.command == "update":
         try:
             update_workspace(Path.cwd())
@@ -556,6 +785,11 @@ def main() -> None:
                 arguments.project.expanduser().resolve()
                 if arguments.non_interactive
                 else _project_path_prompt(arguments.project.expanduser().resolve() if arguments.project else None)
+            )
+            project_type = (
+                arguments.project_type or "documents"
+                if arguments.non_interactive
+                else arguments.project_type or _project_type_prompt()
             )
             if project_path.exists() and any(project_path.iterdir()):
                 parser.error(f"Project directory is not empty: {project_path}")
@@ -578,6 +812,7 @@ def main() -> None:
                 python=arguments.python,
                 install=not arguments.no_install,
                 observability=observability,
+                project_type=project_type,
                 **bootstrap_account,
             )
             if not arguments.non_interactive:

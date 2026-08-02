@@ -2,7 +2,8 @@ import pytest
 
 from pathlib import Path
 
-from supervisor.cli import _can_recover_qwen, _completion_banner, _expand_task_range, _qwen_session_to_resume, _recovered_qwen_event, _resume_stage, _run_summary, _should_skip_accepted_task
+from supervisor import cli
+from supervisor.cli import _can_recover_qwen, _collection_runbooks, _completion_banner, _expand_task_range, _initial_document, _qwen_session_to_resume, _recovered_qwen_event, _resume_stage, _run_registered_collections, _run_summary, _should_skip_accepted_task
 from supervisor.models import NextStep, RunEvent, Status, Task, TaskRun, WorkerResult
 
 
@@ -102,3 +103,73 @@ def test_task_range_expands_inclusive_zero_padded_task_ids():
         _expand_task_range("D010-D007")
     with pytest.raises(ValueError):
         _expand_task_range("D007-T010")
+
+
+def test_collection_runbooks_uses_declared_sequence_and_skips_supporting_markdown(tmp_path: Path):
+    template = """---
+task_id: {task_id}
+sequence: {sequence}
+title: Task
+browser_impact: not_applicable
+playwright_spec:
+---
+
+## Objective
+
+Task
+
+## Acceptance criteria
+
+- It works.
+"""
+    (tmp_path / "F002.md").write_text(template.format(task_id="F002", sequence=2), encoding="utf-8")
+    (tmp_path / "F001.md").write_text(template.format(task_id="F001", sequence=1), encoding="utf-8")
+    (tmp_path / "README.md").write_text("supporting text", encoding="utf-8")
+    (tmp_path / "PRODUCT_BRIEF.template.md").write_text("supporting text", encoding="utf-8")
+
+    assert [path.stem for path in _collection_runbooks(tmp_path)] == ["F001", "F002"]
+
+
+def test_initial_document_requires_and_loads_collection_context(tmp_path: Path):
+    with pytest.raises(ValueError, match="INITIAL.md"):
+        _initial_document(tmp_path)
+
+    (tmp_path / "INITIAL.md").write_text("# Initial project brief\n\nBuild a task app.\n", encoding="utf-8")
+
+    assert "Build a task app." in _initial_document(tmp_path)
+
+
+def test_initial_document_uses_a_generated_project_brief_when_no_local_initial_exists(tmp_path: Path):
+    generated_collection = tmp_path / "authoring-runbooks"
+    generated_collection.mkdir()
+    (tmp_path / "PROJECT_BRIEF.md").write_text("# Project brief\n\nBuild a task app.\n", encoding="utf-8")
+
+    assert "Build a task app." in _initial_document(generated_collection)
+
+
+def test_registered_collections_follow_explicit_children_recursively(tmp_path: Path, monkeypatch):
+    parent = tmp_path / "source-runbooks"
+    authoring = tmp_path / "project" / "authoring-runbooks"
+    implementation = tmp_path / "project" / "runbooks"
+    for directory in (parent / ".supervisor-children", authoring / ".supervisor-children", implementation):
+        directory.mkdir(parents=True, exist_ok=True)
+    (parent / ".supervisor-children" / "authoring.json").write_text(
+        '{"runbooks_dir": "../project/authoring-runbooks"}', encoding="utf-8"
+    )
+    (authoring / ".supervisor-children" / "implementation.json").write_text(
+        '{"runbooks_dir": "../runbooks"}', encoding="utf-8"
+    )
+    (authoring / "INITIAL.md").write_text("# Brief\n", encoding="utf-8")
+    (implementation / "INITIAL.md").write_text("# Brief\n", encoding="utf-8")
+    calls = []
+
+    def run_collection(directory, dry_run, continue_on_nonpass, database_path, initial_context):
+        calls.append((directory, database_path, initial_context))
+        return True
+
+    monkeypatch.setattr(cli, "_run_collection_until_complete", run_collection)
+
+    _run_registered_collections(parent, dry_run=False, continue_on_nonpass=False)
+
+    assert [call[0] for call in calls] == [authoring, implementation]
+    assert all(call[1] == call[0].parent / ".supervisor" / "supervisor.sqlite3" for call in calls)

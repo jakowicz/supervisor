@@ -409,6 +409,37 @@ time:
 supervisor-run --task-range D007-D010
 ```
 
+Run an entire collection once, including any new runbooks created by accepted
+tasks during the run:
+
+```bash
+supervisor-run --run-all --runbooks-dir ../../runbooks
+```
+
+`--run-all` reads `INITIAL.md` in that collection first and appends its context
+to every task. A generated collection can inherit its parent project's
+`PROJECT_BRIEF.md` instead. It re-enumerates the collection after each accepted
+wave, so bounded planning or authoring tasks can safely create the next wave
+without the operator restarting Supervisor.
+
+For intentionally chained collections, add a JSON registration beneath the
+parent collection:
+
+```text
+<runbooks-dir>/.supervisor-children/<name>.json
+```
+
+```json
+{"runbooks_dir": "../path-to-child-runbooks"}
+```
+
+After the parent completes, `--run-all` follows each registered child collection
+recursively. This is explicit by design: Supervisor never scans and executes
+arbitrary directories. Collection state is stored beside each collection's
+parent in `.supervisor/supervisor.sqlite3`, so generated task IDs such as
+`R0001` remain isolated across projects. Set `SUPERVISOR_DATABASE_PATH` only
+when deliberately sharing state.
+
 The batch starts D008 only after D007 is accepted. This prevents an unfinished
 or unreviewed task from becoming the implicit baseline for later work. For a
 known-independent batch, `--continue-on-nonpass` explicitly permits the next

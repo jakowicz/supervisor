@@ -27,6 +27,16 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run one evidence-gated supervisor task.")
     parser.add_argument("--task-id", help="Runbook task ID, for example D005. Automatically loads runbooks/<ID>.md when present.")
     parser.add_argument("--task-range", help="Sequential runbook range, for example D007-D010. Stops at the first task that is not accepted.")
+    parser.add_argument(
+        "--run-all",
+        action="store_true",
+        help="Run a collection to completion, discovering runbooks and explicit child collections created during the run.",
+    )
+    parser.add_argument("--run-initial", action="store_true", help="Run only the first installed runbook in declared sequence order.")
+    parser.add_argument(
+        "--runbooks-dir",
+        help="Directory containing a runbook collection; defaults to <project>/runbooks. --run-all follows its registered children.",
+    )
     parser.add_argument("--continue-on-nonpass", action="store_true", help="Continue a task range after a task needs review or fails. Use only when tasks are independent.")
     parser.add_argument("--runbook", help="Path to a single task runbook, relative to the repository or absolute.")
     parser.add_argument("--title")
@@ -52,18 +62,52 @@ def main() -> None:
     package_root = Path(__file__).resolve().parents[1]
     repo_root = Path(os.getenv("SUPERVISOR_REPO_ROOT", package_root.parents[1])).resolve()
     database_path = Path(os.getenv("SUPERVISOR_DATABASE_PATH", package_root / ".state" / "supervisor.sqlite3"))
-    if arguments.task_range:
+    batch_modes = sum(bool(value) for value in (arguments.task_range, arguments.run_all, arguments.run_initial))
+    if batch_modes:
+        if batch_modes > 1:
+            parser.error("Choose only one of --task-range, --run-all, or --run-initial.")
         if any((arguments.task_id, arguments.runbook, arguments.title, arguments.objective, arguments.acceptance)):
-            parser.error("--task-range cannot be combined with a single-task runbook or ad-hoc task options.")
-        try:
-            task_ids = _expand_task_range(arguments.task_range)
-        except ValueError as error:
-            parser.error(str(error))
-        runbooks = [repo_root / "runbooks" / f"{task_id}.md" for task_id in task_ids]
+            parser.error("Batch modes cannot be combined with a single-task runbook or ad-hoc task options.")
+        supplied_directory = Path(arguments.runbooks_dir).expanduser() if arguments.runbooks_dir else repo_root / "runbooks"
+        runbooks_directory = supplied_directory if supplied_directory.is_absolute() else (supplied_directory.resolve() if supplied_directory.is_dir() else repo_root / supplied_directory)
+        if arguments.task_range:
+            try:
+                task_ids = _expand_task_range(arguments.task_range)
+            except ValueError as error:
+                parser.error(str(error))
+            runbooks = [runbooks_directory / f"{task_id}.md" for task_id in task_ids]
+        else:
+            try:
+                runbooks = _collection_runbooks(runbooks_directory)
+            except ValueError as error:
+                parser.error(str(error))
+            if arguments.run_initial:
+                runbooks = runbooks[:1]
         missing = [str(path) for path in runbooks if not path.is_file()]
         if missing:
-            parser.error("Task range requires an installed runbook for every task: " + ", ".join(missing))
-        _run_task_range(runbooks, arguments.dry_run, arguments.continue_on_nonpass, database_path)
+            parser.error("Selected collection requires an installed runbook for every task: " + ", ".join(missing))
+        if not runbooks:
+            parser.error(f"No runnable Markdown runbooks found in {runbooks_directory}.")
+        # Generated collections intentionally reuse friendly IDs such as R0001.
+        # Keep durable state beside each collection so different generated
+        # projects cannot cause accepted-task or resume collisions. An explicit
+        # SUPERVISOR_DATABASE_PATH remains the opt-in shared-state override.
+        if "SUPERVISOR_DATABASE_PATH" not in os.environ:
+            database_path = runbooks_directory.parent / ".supervisor" / "supervisor.sqlite3"
+        initial_context = ""
+        if arguments.run_all or arguments.run_initial:
+            try:
+                initial_context = _initial_document(runbooks_directory)
+            except ValueError as error:
+                parser.error(str(error))
+        if arguments.run_all:
+            completed = _run_collection_until_complete(
+                runbooks_directory, arguments.dry_run, arguments.continue_on_nonpass, database_path, initial_context
+            )
+            if completed:
+                _run_registered_collections(runbooks_directory, arguments.dry_run, arguments.continue_on_nonpass)
+        else:
+            _run_task_range(runbooks, arguments.dry_run, arguments.continue_on_nonpass, database_path, initial_context)
         return
     if arguments.runbook:
         # An explicit path follows normal CLI behaviour: relative to the
@@ -80,6 +124,9 @@ def main() -> None:
         if not arguments.task_id or not arguments.title:
             parser.error("Provide --task-id for an installed runbook, --runbook PATH, or both --task-id and --title for an ad-hoc task.")
         task = Task(task_id=arguments.task_id, title=arguments.title, objective=arguments.objective, acceptance_criteria=arguments.acceptance, sequence=arguments.sequence or 0, browser_impact=arguments.browser_impact or "not_applicable", playwright_specs=arguments.playwright_spec)
+    initial_context = os.getenv("SUPERVISOR_INITIAL_CONTEXT", "").strip()
+    if initial_context:
+        task = task.model_copy(update={"objective": "\n\n".join((task.objective, f"Initial project brief:\n{initial_context}"))})
     store = RunStore(database_path)
     previous_state = store.state_for(task.task_id)
     # An accepted task is immutable from the supervisor's perspective.  A
@@ -421,9 +468,34 @@ def _expand_task_range(value: str) -> list[str]:
     return [f"{start_prefix.upper()}{number:0{width}d}" for number in range(int(start_number), int(end_number) + 1)]
 
 
+def _collection_runbooks(directory: Path) -> list[Path]:
+    """Return a collection's task contracts in their declared sequence order."""
+
+    candidates = [path for path in directory.glob("*.md") if re.fullmatch(r"[A-Za-z]+\d+", path.stem)]
+    return sorted(candidates, key=lambda path: (load_task(path).sequence, path.name))
+
+
+def _initial_document(directory: Path) -> str:
+    """Load the collection context that must precede an all-task run."""
+
+    # The source factory collection owns INITIAL.md. Generated collections live
+    # one level below a project workspace and inherit its normalised brief.
+    # Keeping this resolution generic makes those collections ordinary
+    # Supervisor collections rather than a special generation command.
+    candidates = (directory / "INITIAL.md", directory.parent / "PROJECT_BRIEF.md")
+    for path in candidates:
+        if path.is_file():
+            content = path.read_text(encoding="utf-8").strip()
+            if content:
+                return content
+            raise ValueError(f"--run-all requires a completed {path}.")
+    expected = " or ".join(str(path) for path in candidates)
+    raise ValueError(f"--run-all requires {expected}.")
+
+
 def _run_task_range(
-    runbooks: list[Path], dry_run: bool, continue_on_nonpass: bool, database_path: Path
-) -> None:
+    runbooks: list[Path], dry_run: bool, continue_on_nonpass: bool, database_path: Path, initial_context: str = ""
+) -> bool:
     """Run independent CLI invocations sequentially in one shared worktree."""
 
     print(
@@ -437,7 +509,11 @@ def _run_task_range(
         command = [sys.executable, "-m", "supervisor.cli", "--runbook", str(runbook)]
         if dry_run:
             command.append("--dry-run")
-        completed = subprocess.run(command, check=False)
+        environment = os.environ.copy()
+        environment["SUPERVISOR_DATABASE_PATH"] = str(database_path)
+        if initial_context:
+            environment["SUPERVISOR_INITIAL_CONTEXT"] = initial_context
+        completed = subprocess.run(command, check=False, env=environment)
         if completed.returncode:
             raise SystemExit(f"BATCH HALTED {task_id} · supervisor process exited {completed.returncode}")
         store = RunStore(database_path)
@@ -452,9 +528,62 @@ def _run_task_range(
         message = f"BATCH {index:02d}/{len(runbooks):02d} STOP {task_id} · state={status}"
         if not continue_on_nonpass:
             print(message + " · later tasks were not started", file=sys.stderr, flush=True)
-            return
+            return False
         print(message + " · continuing by explicit override", file=sys.stderr, flush=True)
     print("BATCH FINAL · all requested tasks were started", file=sys.stderr, flush=True)
+    return True
+
+
+def _run_collection_until_complete(
+    directory: Path, dry_run: bool, continue_on_nonpass: bool, database_path: Path, initial_context: str
+) -> bool:
+    """Run a collection until no unaccepted task remains.
+
+    A task may create more runbooks. Re-enumerating only after an accepted pass
+    lets a single invocation consume a bounded, dynamically growing collection
+    without precomputing an unbounded task list.
+    """
+
+    wave = 0
+    while True:
+        runbooks = _collection_runbooks(directory)
+        if not runbooks:
+            raise ValueError(f"No runnable Markdown runbooks found in {directory}.")
+        store = RunStore(database_path)
+        try:
+            pending = [path for path in runbooks if (store.state_for(path.stem) or {}).get("status") != "accepted"]
+        finally:
+            store.close()
+        if not pending:
+            print(f"COLLECTION FINAL · {directory} has no pending tasks", file=sys.stderr, flush=True)
+            return True
+        wave += 1
+        print(f"COLLECTION WAVE {wave:02d} · {len(pending)} pending tasks in {directory}", file=sys.stderr, flush=True)
+        if not _run_task_range(pending, dry_run, continue_on_nonpass, database_path, initial_context):
+            return False
+
+
+def _run_registered_collections(directory: Path, dry_run: bool, continue_on_nonpass: bool) -> None:
+    """Follow explicit child-collection registrations after a parent completes."""
+
+    registrations = directory / ".supervisor-children"
+    if not registrations.is_dir():
+        return
+    for registration in sorted(registrations.glob("*.json")):
+        try:
+            payload = json.loads(registration.read_text(encoding="utf-8"))
+            child_value = payload["runbooks_dir"]
+        except (json.JSONDecodeError, KeyError, TypeError) as error:
+            raise ValueError(f"Invalid child collection registration {registration}: {error}") from error
+        if not isinstance(child_value, str) or not child_value.strip():
+            raise ValueError(f"Invalid child collection registration {registration}: runbooks_dir must be a path string.")
+        child_directory = (directory / child_value).resolve()
+        if not child_directory.is_dir():
+            raise ValueError(f"Registered child collection does not exist: {child_directory} ({registration})")
+        child_database = child_directory.parent / ".supervisor" / "supervisor.sqlite3"
+        child_context = _initial_document(child_directory)
+        if _run_collection_until_complete(child_directory, dry_run, continue_on_nonpass, child_database, child_context):
+            _run_registered_collections(child_directory, dry_run, continue_on_nonpass)
 
 
 if __name__ == "__main__":
