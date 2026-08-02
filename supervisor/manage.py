@@ -424,11 +424,7 @@ def _choose_compatible_targets(category: str) -> tuple[str, list[str]]:
 def _game_target_requirement_options(target: str, characteristics: list[str]) -> tuple[str, ...]:
     """Return selectable delivery requirements appropriate to a game target."""
 
-    options = [
-        "Accessible controls, text, captions, and visual settings",
-        "Save, resume, and data-loss recovery behaviour",
-        "Crash reporting and player-facing error recovery",
-    ]
+    options: list[str] = []
     if target in {"Responsive public web application", "Desktop web application"}:
         options.extend(("Keyboard, mouse, touch, and gamepad input", "Responsive layout across phone, tablet, and desktop screens", "Browser compatibility and web performance budget"))
     elif target == "Progressive web app (PWA)":
@@ -444,6 +440,17 @@ def _game_target_requirement_options(target: str, characteristics: list[str]) ->
     elif target in {"Meta Quest / virtual reality", "Augmented or mixed reality"}:
         options.extend(("Comfort settings, locomotion, and motion-sickness mitigation", "Tracked-controller, hand-input, and boundary behaviour", "Spatial performance, battery, and platform-store requirements"))
 
+    return tuple(dict.fromkeys(options))
+
+
+def _game_shared_requirement_options(characteristics: list[str]) -> tuple[str, ...]:
+    """Return requirements that apply to the game regardless of target platform."""
+
+    options = [
+        "Accessible controls, text, captions, and visual settings",
+        "Save, resume, and data-loss recovery behaviour",
+        "Crash reporting and player-facing error recovery",
+    ]
     if "Role-playing game (RPG)" in characteristics:
         options.extend(("Long-session save, checkpoint, and recovery rules", "Readable dialogue, inventory, quest, and progression UI"))
     if "Real-time action, platformer, or combat game" in characteristics:
@@ -485,6 +492,10 @@ not to the reusable factory runbooks.
 ## Game characteristics
 
 {values.get('game_characteristics', '- Not applicable.')}
+
+## Shared game requirements
+
+{values.get('shared_game_requirements', '- Not applicable.')}
 
 ## Who is it for, and what must it help them do?
 
@@ -564,6 +575,9 @@ def create_initial_brief(path: Path, *, project_name: str, force: bool = False) 
         if category == "Game"
         else []
     )
+    shared_game_requirements = "\n".join(
+        f"- {requirement}" for requirement in _game_shared_requirement_options(game_characteristics)
+    ) if category == "Game" else "- Not applicable."
     target_details = (
         {target: _game_target_requirements(target, game_characteristics) for target in targets}
         if category == "Game"
@@ -607,6 +621,7 @@ def create_initial_brief(path: Path, *, project_name: str, force: bool = False) 
         "category": category,
         "target_family": target_family,
         "game_characteristics": "\n".join(f"- [x] {item}" for item in game_characteristics) or "- Not specified.",
+        "shared_game_requirements": shared_game_requirements,
         "users": users,
         "primary_outcome": primary_outcome,
         "first_session": first_session,

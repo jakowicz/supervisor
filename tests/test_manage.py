@@ -96,16 +96,18 @@ def test_target_selector_infers_a_compatible_game_family(monkeypatch):
     assert targets == ["PlayStation", "Xbox"]
 
 
-def test_game_target_requirement_options_include_rpg_and_console_needs():
+def test_game_target_requirements_are_platform_specific_and_shared_requirements_include_rpg_needs():
     options = manage._game_target_requirement_options("PlayStation", ["Role-playing game (RPG)"])
+    shared = manage._game_shared_requirement_options(["Role-playing game (RPG)"])
 
     assert "Controller-first input, system navigation, and player profile handling" in options
-    assert "Long-session save, checkpoint, and recovery rules" in options
+    assert "Long-session save, checkpoint, and recovery rules" not in options
+    assert "Long-session save, checkpoint, and recovery rules" in shared
     assert "Touch controls and orientation rules" not in options
 
 
 def test_multiplayer_games_infer_social_features_and_deferred_content_is_clear():
-    options = manage._game_target_requirement_options("Windows", ["Multiplayer game"])
+    options = manage._game_shared_requirement_options(["Multiplayer game"])
 
     assert "Social features, communities, and player-safety requirements" in options
     assert "Online multiplayer" not in manage.GAME_DEFERRED_CAPABILITIES
@@ -115,9 +117,11 @@ def test_multiplayer_games_infer_social_features_and_deferred_content_is_clear()
 
 def test_game_target_requirements_are_derived_without_an_extra_prompt():
     requirements = manage._game_target_requirements("Windows", ["Real-time action, platformer, or combat game"])
+    shared = manage._game_shared_requirement_options(["Real-time action, platformer, or combat game"])
 
     assert "- Keyboard, mouse, and gamepad support" in requirements
-    assert "- Stable frame-time and input-latency target" in requirements
+    assert "- Stable frame-time and input-latency target" not in requirements
+    assert "Stable frame-time and input-latency target" in shared
 
 
 def test_selected_bullets_combines_presets_and_optional_detail(monkeypatch):
