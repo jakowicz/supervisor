@@ -641,6 +641,15 @@ def _run_task_range(
         if dry_run:
             command.append("--dry-run")
         environment = os.environ.copy()
+        # Batch tasks are launched with ``python -m supervisor.cli``.  Unlike
+        # the installed console script, that module invocation does not know
+        # where Supervisor is installed when the working directory is an
+        # application/factory repository.  Preserve the package root so a
+        # plain `supervisor-run --project name` needs no caller-managed
+        # PYTHONPATH export.
+        package_root = str(Path(__file__).resolve().parents[1])
+        inherited_path = environment.get("PYTHONPATH", "")
+        environment["PYTHONPATH"] = package_root if not inherited_path else package_root + os.pathsep + inherited_path
         environment["SUPERVISOR_DATABASE_PATH"] = str(database_path)
         if initial_context:
             environment["SUPERVISOR_INITIAL_CONTEXT"] = initial_context
