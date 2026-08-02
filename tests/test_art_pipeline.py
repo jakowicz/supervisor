@@ -39,6 +39,7 @@ def test_art_director_records_original_art_provenance(tmp_path):
     assert manifest["provenance"]["original_only"] is True
     assert "copied commercial game art" in manifest["negative_prompt"]
     assert manifest["generation"]["model"] == "Z-Image-Turbo"
+    assert "Requested source asset: ember gate 001" in manifest["prompt"]
 
 
 def test_z_image_workflow_records_the_installed_split_model_contract():

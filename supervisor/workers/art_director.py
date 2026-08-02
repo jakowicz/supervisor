@@ -22,7 +22,11 @@ def run(task: Task, repo_root: Path) -> WorkerResult:
     for asset_id in asset_ids(task):
         root = asset_root(repo_root, asset_id)
         root.mkdir(parents=True, exist_ok=True)
-        prompt = ", ".join(part for part in (style_prompt(), task.title, task.objective.replace("\n", " "), brief_text.replace("\n", " ")) if part)
+        # A task can request multiple progression stages.  Give the local model
+        # the asset identifier as an explicit subject cue so those candidates
+        # do not all receive an otherwise identical task-level prompt.
+        asset_cue = f"Requested source asset: {asset_id.replace('_', ' ')}"
+        prompt = ", ".join(part for part in (style_prompt(), task.title, asset_cue, task.objective.replace("\n", " "), brief_text.replace("\n", " ")) if part)
         manifest = {
             "asset_id": asset_id,
             "task_id": task.task_id,
