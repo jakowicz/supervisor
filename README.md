@@ -123,7 +123,7 @@ cd supervisor
 python3.11 -m venv .venv
 source .venv/bin/activate
 pip install -e '.[dev]'
-cp .env.example .env
+cp .env.example ../.env
 ```
 
 ### Start a new project
@@ -166,7 +166,7 @@ editable install:
 supervisor configure
 ```
 
-It writes an ignored, mode-600 `.env` and prompts for project paths, enabled
+It writes an ignored, mode-600 project-root `.env` and prompts for project paths, enabled
 agents and their commands/models, total retry attempts, dashboard preference,
 Git policy, timeouts, and optional Langfuse credentials. The dashboard chooses
 a free localhost port when its preferred port is occupied. When installed as
@@ -466,10 +466,10 @@ reinstalls its CLI, then runs the newly downloaded version's environment
 migrations. The authoritative, append-only history is committed to the
 Supervisor repository in `supervisor/env_migrations.json`. `supervisor update`
 compares that manifest with `SUPERVISOR_ENV_SCHEMA_VERSION` in the project's
-private `.env`, adds missing safe defaults or declared renamed keys, and never
+private project-root `.env`, adds missing safe defaults or declared renamed keys, and never
 overwrites an existing project value.
 
-Use `supervisor env-migrate --config .env` to inspect/apply the same migration
+Use `supervisor env-migrate` to inspect/apply the same migration
 step manually. Each future configuration change must add a migration entry to
 `supervisor/env_migrations.json`; do not rely on copying `.env.example` over a
 project file. The test suite enforces that `.env.example` declares the current

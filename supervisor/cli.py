@@ -12,9 +12,8 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-from dotenv import load_dotenv
-
 from .graph import SupervisorConfig, create_graph
+from .environment import load_project_environment, project_path
 from .checkpoints import continuation_brief, diff_snapshot, stream_checkpoint, stream_delta
 from .failure_summary import summarize_failure
 from .models import RunEvent, Status, Task, TaskRun, WorkerResult, model_to_dict
@@ -107,10 +106,13 @@ given for that task explicitly.""",
     arguments = parser.parse_args()
     if sum(bool(value) for value in (arguments.retry, arguments.verify, arguments.start_on)) > 1:
         parser.error("Choose only one of --retry, --verify, or --start-on.")
-    load_dotenv()
     package_root = Path(__file__).resolve().parents[1]
-    repo_root = Path(os.getenv("SUPERVISOR_REPO_ROOT", package_root.parents[1])).resolve()
-    database_path = Path(os.getenv("SUPERVISOR_DATABASE_PATH", package_root / ".state" / "supervisor.sqlite3"))
+    project_root = load_project_environment(package_root)
+    repo_root = project_path(os.getenv("SUPERVISOR_REPO_ROOT", "."), project_root)
+    database_path = project_path(
+        os.getenv("SUPERVISOR_DATABASE_PATH", ".state/supervisor.sqlite3"),
+        repo_root,
+    )
     project_workspace: Path | None = None
     if arguments.project:
         if arguments.initial:

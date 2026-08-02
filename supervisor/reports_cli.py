@@ -11,13 +11,16 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from dotenv import load_dotenv
+from .environment import load_project_environment, project_path
 
 
 def database_path() -> Path:
-    load_dotenv()
     package_root = Path(__file__).resolve().parents[1]
-    return Path(os.getenv("SUPERVISOR_DATABASE_PATH", package_root / ".state" / "supervisor.sqlite3"))
+    project_root = load_project_environment(package_root)
+    return project_path(
+        os.getenv("SUPERVISOR_DATABASE_PATH", ".state/supervisor.sqlite3"),
+        project_root,
+    )
 
 
 def open_database(path: Path) -> sqlite3.Connection:

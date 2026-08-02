@@ -26,11 +26,11 @@ from .runbooks import load_task
 DEFAULTS = {
     # The intended installation is a submodule at the project-root `supervisor`.
     # This resolves to the containing project while still remaining editable.
-    "SUPERVISOR_REPO_ROOT": "..",
+    "SUPERVISOR_REPO_ROOT": ".",
     # Operational evidence belongs to the controlled project's root, not the
     # reusable submodule. This keeps a supervisor upgrade from owning or
     # obscuring a project's execution history.
-    "SUPERVISOR_DATABASE_PATH": "../.state/supervisor.sqlite3",
+    "SUPERVISOR_DATABASE_PATH": ".state/supervisor.sqlite3",
     "SUPERVISOR_QWEN_ATTEMPTS": "1",
     "SUPERVISOR_OPENHANDS_ATTEMPTS": "1",
     "SUPERVISOR_CODEX_ATTEMPTS": "3",
@@ -722,7 +722,7 @@ def _record_initial_art_direction(project_slug: str, brief: str) -> str:
     """Configure the factory's art lane and return the brief wording to retain."""
 
     try:
-        config = project_supervisor_checkout(Path.cwd()) / ".env"
+        config = project_supervisor_checkout(Path.cwd()).parent / ".env"
     except RuntimeError:
         # Explicit-output uses outside a Supervisor project still creates a
         # useful brief; it simply has no local asset lane to configure.
@@ -1077,7 +1077,7 @@ def migrate_env(path: Path, *, project_root: Path | None = None) -> list[str]:
     """
 
     path = path.expanduser().resolve()
-    project_root = (project_root or path.parent.parent).expanduser().resolve()
+    project_root = (project_root or path.parent).expanduser().resolve()
     existing = dotenv_values(path) if path.is_file() else {}
     raw_version = existing.get("SUPERVISOR_ENV_SCHEMA_VERSION") or "0"
     try:
@@ -1243,7 +1243,7 @@ def update_workspace(start: Path | None = None) -> Path:
     python = str(project_python) if project_python.is_file() else sys.executable
     _run([python, "-m", "pip", "install", "-e", ".[dev]"], cwd=repository_root)
     _run(
-        [python, "-m", "supervisor.manage", "env-migrate", "--config", str(repository_root / ".env"), "--project-root", str(repository_root.parent)],
+        [python, "-m", "supervisor.manage", "env-migrate", "--config", str(repository_root.parent / ".env"), "--project-root", str(repository_root.parent)],
         cwd=repository_root,
     )
     print("Project Supervisor tools and .env migrations are up to date. Commit the changed supervisor submodule pointer in the parent project when ready.")
@@ -1372,10 +1372,10 @@ def initialise_project(
     runbooks.mkdir(exist_ok=True)
     (runbooks / "README.md").write_text(RUNBOOKS_README, encoding="utf-8")
     (runbooks / "TEMPLATE.md").write_text(RUNBOOK_TEMPLATE, encoding="utf-8")
-    _append_gitignore(project_root / ".gitignore", "/.state/")
+    _append_gitignore(project_root / ".gitignore", "/.state/\n/.env")
 
     example = project_root / "supervisor" / ".env.example"
-    config = project_root / "supervisor" / ".env"
+    config = project_root / ".env"
     if example.is_file() and not config.exists():
         config.write_text(example.read_text(encoding="utf-8"), encoding="utf-8")
         config.chmod(0o600)
@@ -1432,7 +1432,7 @@ supervisor-dashboard --serve to view the local dashboard.""",
     )
     commands = parser.add_subparsers(dest="command", required=True)
     configure_parser = commands.add_parser("configure", help="Interactively create or update an ignored .env configuration file.")
-    configure_parser.add_argument("--config", type=Path, default=Path(".env"), help="Configuration file to write (default: .env).")
+    configure_parser.add_argument("--config", type=Path, help="Configuration file to write (default: project-root/.env).")
     initial_parser = commands.add_parser("initial", help="Interactively create a named project's brief consumed by the first factory runbook.")
     initial_parser.add_argument("--project-name", help="Project name; prompted for when omitted. The default brief path is projects/<project-name>/INITIAL.md.")
     initial_parser.add_argument("--projects-dir", type=Path, default=DEFAULT_PROJECTS_DIRECTORY, help="Directory containing generated project workspaces (default: projects).")
@@ -1441,7 +1441,7 @@ supervisor-dashboard --serve to view the local dashboard.""",
     projects_parser = commands.add_parser("projects", help="List named runbook-factory projects and their durable progress.")
     projects_parser.add_argument("--projects-dir", type=Path, default=DEFAULT_PROJECTS_DIRECTORY, help="Directory containing named project workspaces (default: projects).")
     migration_parser = commands.add_parser("env-migrate", help="Apply versioned, non-destructive .env migrations and record an audit log.")
-    migration_parser.add_argument("--config", type=Path, default=Path(".env"), help="Project .env path (default: .env).")
+    migration_parser.add_argument("--config", type=Path, help="Project .env path (default: project-root/.env).")
     migration_parser.add_argument("--project-root", type=Path, help="Project root for .state/supervisor-env-migrations.log.")
     init_parser = commands.add_parser("init", help="Interactively create and configure an empty Git project with the supervisor, runbooks, and shared Langfuse setup.")
     init_parser.add_argument("project", type=Path, nargs="?", help="Optional new or empty project directory; prompted for when omitted.")
@@ -1458,7 +1458,8 @@ supervisor-dashboard --serve to view the local dashboard.""",
         return
     arguments = parser.parse_args()
     if arguments.command == "configure":
-        configure(arguments.config.expanduser().resolve())
+        config = arguments.config or (project_supervisor_checkout(Path.cwd()).parent / ".env")
+        configure(config.expanduser().resolve())
     if arguments.command == "initial":
         try:
             project_name = arguments.project_name or _required("Project name")
@@ -1472,15 +1473,16 @@ supervisor-dashboard --serve to view the local dashboard.""",
         print_projects(arguments.projects_dir.expanduser().resolve(), Path.cwd() / "runbooks")
     if arguments.command == "env-migrate":
         try:
-            changes = migrate_env(arguments.config, project_root=arguments.project_root)
+            config = arguments.config or (project_supervisor_checkout(Path.cwd()).parent / ".env")
+            changes = migrate_env(config, project_root=arguments.project_root)
         except ValueError as error:
             parser.error(str(error))
         if changes:
-            print(f"Updated {arguments.config}:")
+            print(f"Updated {config}:")
             for change in changes:
                 print(f"- {change}")
         else:
-            print(f"{arguments.config} already uses Supervisor environment schema {ENV_SCHEMA_VERSION}; no changes needed.")
+            print(f"{config} already uses Supervisor environment schema {ENV_SCHEMA_VERSION}; no changes needed.")
     if arguments.command == "update":
         try:
             update_workspace(Path.cwd())
@@ -1531,7 +1533,7 @@ supervisor-dashboard --serve to view the local dashboard.""",
             )
             if not arguments.non_interactive:
                 print("\nConfigure this project's supervisor:")
-                configure(project_path / "supervisor" / ".env")
+                configure(project_path / ".env")
         except (RuntimeError, ValueError) as error:
             parser.error(str(error))
 

@@ -61,7 +61,7 @@ def test_initial_art_direction_updates_only_art_values_in_project_env(monkeypatc
     checkout.mkdir()
     (checkout / "pyproject.toml").write_text("", encoding="utf-8")
     (checkout / ".git").mkdir()
-    config = checkout / ".env"
+    config = tmp_path / ".env"
     config.write_text("LANGFUSE_SECRET_KEY=secret\nART_STYLE_NAME=old\n", encoding="utf-8")
     monkeypatch.chdir(tmp_path)
 
@@ -84,7 +84,7 @@ def test_blank_initial_art_direction_configures_gemma4(monkeypatch, tmp_path: Pa
 
     recorded = manage._record_initial_art_direction("moonlit", "")
 
-    updated = (checkout / ".env").read_text(encoding="utf-8")
+    updated = (tmp_path / ".env").read_text(encoding="utf-8")
     assert "ART_DIRECTION_MODE=gemma4_auto" in updated
     assert "ART_DIRECTION_MODEL=gemma4:12b" in updated
     assert "Gemma 4 12B will create" in recorded
@@ -258,7 +258,7 @@ def test_initialise_project_scaffolds_a_safe_empty_project(monkeypatch, tmp_path
         if command[:3] == ["git", "submodule", "add"]:
             supervisor_root = cwd / "supervisor"
             supervisor_root.mkdir()
-            (supervisor_root / ".env.example").write_text("SUPERVISOR_REPO_ROOT=..\n", encoding="utf-8")
+            (supervisor_root / ".env.example").write_text("SUPERVISOR_REPO_ROOT=.\n", encoding="utf-8")
 
     monkeypatch.setattr(manage, "_run", fake_run)
     project = tmp_path / "new-project"
@@ -269,10 +269,10 @@ def test_initialise_project_scaffolds_a_safe_empty_project(monkeypatch, tmp_path
         (["git", "init"], project),
         (["git", "submodule", "add", "https://example.test/supervisor.git", "supervisor"], project),
     ]
-    assert (project / ".gitignore").read_text(encoding="utf-8") == "/.state/\n"
+    assert (project / ".gitignore").read_text(encoding="utf-8") == "/.state/\n/.env\n"
     assert (project / "runbooks" / "TEMPLATE.md").read_text(encoding="utf-8") == manage.RUNBOOK_TEMPLATE
-    config = (project / "supervisor" / ".env").read_text(encoding="utf-8")
-    assert "SUPERVISOR_REPO_ROOT=.." in config
+    config = (project / ".env").read_text(encoding="utf-8")
+    assert "SUPERVISOR_REPO_ROOT=." in config
     assert "SUPERVISOR_CODING_AGENTS=codex" in config
     assert "SUPERVISOR_AGENT_ORDER=codex" in config
 
@@ -288,7 +288,7 @@ def test_initialise_project_applies_the_game_pipeline_profile(monkeypatch, tmp_p
 
     manage.initialise_project(project, install=False, observability=False, project_type="game")
 
-    config = (project / "supervisor" / ".env").read_text(encoding="utf-8")
+    config = (project / ".env").read_text(encoding="utf-8")
     assert "SUPERVISOR_CODING_AGENTS=codex" in config
     assert "SUPERVISOR_AGENT_ORDER=codex,test,browser,visual_review,completion_audit,git_publish" in config
     assert f"SUPERVISOR_TEST_COMMANDS={manage.GAME_TEST_COMMANDS_JSON}" in config
@@ -431,7 +431,7 @@ def test_update_workspace_fast_forwards_and_reinstalls(monkeypatch, tmp_path: Pa
     assert commands == [
         (["git", "pull", "--ff-only", "origin", "main"], checkout),
         (["/tools/python", "-m", "pip", "install", "-e", ".[dev]"], checkout),
-        (["/tools/python", "-m", "supervisor.manage", "env-migrate", "--config", str(checkout / ".env"), "--project-root", str(tmp_path)], checkout),
+        (["/tools/python", "-m", "supervisor.manage", "env-migrate", "--config", str(tmp_path / ".env"), "--project-root", str(tmp_path)], checkout),
     ]
 
 

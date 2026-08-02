@@ -12,8 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from dotenv import load_dotenv
-
+from .environment import load_project_environment, project_path
 from .models import Task, WorkerResult
 from .observability import SupervisorTelemetry
 from .reports_cli import open_database
@@ -64,11 +63,14 @@ This command reads SQLite history; it does not execute or alter task work.""",
     arguments = parser.parse_args()
     if not arguments.all and not arguments.task:
         parser.error("Pass --all to import all runs, or --task to import one task. Run without arguments for usage.")
-    load_dotenv()
     package_root = Path(__file__).resolve().parents[1]
-    database = arguments.database or Path(os.getenv("SUPERVISOR_DATABASE_PATH", ".state/supervisor.sqlite3"))
+    project_root = load_project_environment(package_root)
+    database = arguments.database or project_path(
+        os.getenv("SUPERVISOR_DATABASE_PATH", ".state/supervisor.sqlite3"),
+        project_root,
+    )
     if not database.is_absolute():
-        database = package_root / database
+        database = project_path(database, project_root)
     telemetry = SupervisorTelemetry.from_environment()
     if not telemetry.is_enabled:
         parser.error("Set SUPERVISOR_OBSERVABILITY_ENABLED=true before importing.")
