@@ -57,8 +57,8 @@ when convenient.
 
 `init` automatically selects a compatible Python 3.10+ interpreter from your
 `PATH`, then creates a Git repository, adds this repository as `supervisor/`, creates
-`runbooks/TEMPLATE.md`, configures ignored root `.state/` evidence storage, and
-installs the local virtual environment. It is interactive: it asks for the
+`runbooks/TEMPLATE.md`, creates versioned root `.env` configuration plus ignored
+root `.secrets.env` credentials, and installs the local virtual environment. It is interactive: it asks for the
 initial shared-Langfuse account only when no local service is running, then
 prompts for this project's worker commands/models, retry policy, Git policy,
 dashboard preference, and Langfuse project credentials. It reuses the one
@@ -97,7 +97,7 @@ python3.11 -m venv .venv
 ### Run your first task
 
 Create a small runbook from `../runbooks/TEMPLATE.md`, for example
-`../runbooks/T001.md`. In `supervisor/.env`, configure the workers you intend
+`../runbooks/T001.md`. In the project-root `.env`, configure the workers you intend
 to use and explicitly allow edits. Then run the task and inspect its report:
 
 ```zsh
@@ -126,6 +126,33 @@ pip install -e '.[dev]'
 cp .env.example ../.env
 cp .secrets.env.example ../.secrets.env
 ```
+
+## Configuration and credentials
+
+Supervisor reads two files from the project root, in this order:
+
+| File | Commit it? | Purpose |
+| --- | --- | --- |
+| `.env` | Yes | Non-secret project contract: agents, commands, tests, models, retry limits, publishing, observability, asset settings, and paths. |
+| `.secrets.env` | No | Credentials only, such as API keys and Langfuse keys. Values here override values from `.env`. |
+| `.secrets.env.example` | Yes | Empty, documented template showing which credential keys may be supplied. |
+
+Never put credentials in `.env`. Keep `.secrets.env` out of Git and restrict it
+to the people and automation that need access.
+
+Run `supervisor configure` after `supervisor init`, after adding Supervisor to
+an existing project, or whenever the project's agents, validation, models,
+publishing policy, or observability setup changes. It updates the project-root
+`.env` and writes any credentials it collects to `.secrets.env`; it does not
+print secret values. Re-run it safely to revise the project contract:
+
+```zsh
+supervisor configure
+```
+
+Use `supervisor update` to apply safe, versioned additions to `.env` supplied
+by newer Supervisor releases. It preserves project choices and never writes
+credentials into `.env`.
 
 ### Start a new project
 
