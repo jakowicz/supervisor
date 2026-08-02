@@ -92,6 +92,8 @@ GAME_TEST_COMMANDS = (
 )
 GAME_TEST_COMMANDS_JSON = json.dumps(GAME_TEST_COMMANDS, separators=(",", ":"))
 ENV_MIGRATION_MANIFEST_PATH = Path(__file__).with_name("env_migrations.json")
+EXAMPLE_COLOUR = "\033[36m"  # cyan: visible but readable in dark terminals
+TERMINAL_RESET = "\033[0m"
 
 
 def _env_migration_manifest() -> dict[str, object]:
@@ -340,7 +342,19 @@ about acceptance criteria. Then run it from `../supervisor`:
 """
 
 
-def _prompt(label: str, default: str, *, secret: bool = False) -> str:
+def _print_example(example: str, *, plural: bool = False) -> None:
+    """Make optional guidance visually distinct from a required answer."""
+
+    heading = "Examples" if plural else "Example"
+    print(f"{EXAMPLE_COLOUR}{heading}: {example}{TERMINAL_RESET}")
+
+
+def _prompt(label: str, default: str, *, secret: bool = False, example: str | None = None) -> str:
+    if example:
+        print()
+        print(f"{label}:")
+        _print_example(example)
+        label = "Value"
     prompt = (
         f"{label} (press Enter to keep the current value): "
         if secret and default
@@ -368,18 +382,19 @@ def _project_type_prompt(default: str = "documents") -> str:
 
 def _required(label: str, *, example: str | None = None) -> str:
     print()
+    print(f"{label}:")
     if example:
-        print(f"Example: {example}")
-    while not (value := input(f"{label}: ").strip()):
+        _print_example(example)
+    while not (value := input("> ").strip()):
         print("This field is required.")
     return value
 
 
 def _multiline(label: str, *, example: str | None = None) -> str:
     print()
-    if example:
-        print(f"Examples: {example}")
     print(f"{label} (enter one item per line; enter a single '.' when finished):")
+    if example:
+        _print_example(example, plural=True)
     lines: list[str] = []
     while (line := input("> ").strip()) != ".":
         if line:
@@ -394,8 +409,9 @@ def _selected_bullets(label: str, options: tuple[str, ...], *, other_example: st
     other = ""
     if other_example:
         print()
-        print(f"Optional other detail. Example: {other_example}")
-        other = input("Other detail (press Enter to skip): ").strip()
+        print("Optional other detail (press Enter to skip):")
+        _print_example(other_example)
+        other = input("> ").strip()
     lines = [f"- {item}" for item in selected]
     if other:
         lines.append(f"- Other: {other}")
@@ -403,12 +419,13 @@ def _selected_bullets(label: str, options: tuple[str, ...], *, other_example: st
 
 
 def _choose_one_with_example(label: str, options: tuple[str, ...], *, example: str) -> str:
-    print(f"Example: {example}")
-    return _choose_one(label, options)
+    return _choose_one(label, options, example=example)
 
 
-def _choose_one(label: str, options: tuple[str, ...]) -> str:
+def _choose_one(label: str, options: tuple[str, ...], *, example: str | None = None) -> str:
     print(f"\n{label}:")
+    if example:
+        _print_example(example)
     for number, option in enumerate(options, start=1):
         print(f"  {number}. {option}")
     while True:
@@ -422,7 +439,8 @@ def _choose_many_fallback(label: str, options: tuple[str, ...]) -> list[str]:
     """Non-interactive fallback for piped input and terminals without raw mode."""
 
     print(f"\n{label}:")
-    print("Enter one or more numbers separated by commas (for example: 1, 4, 12).")
+    print("Enter one or more numbers separated by commas.")
+    _print_example("1, 4, 12")
     print("Press Enter when no additional targets are needed.")
     for number, option in enumerate(options, start=1):
         print(f"  {number}. {option}")
@@ -787,8 +805,10 @@ def create_initial_brief(path: Path, *, project_name: str, force: bool = False) 
         sync = "Store user state remotely against the user account so it can be shared across selected devices wherever possible. Provide a local offline cache, safe synchronisation, and conflict recovery where the product supports offline work."
         compliance = "Provide localisation support, privacy consent and user data controls, and platform-appropriate accessibility requirements (including WCAG guidance for web surfaces). Build the appropriate distributable package for every selected platform."
         support = "Support device classes and OS/browser versions that remain widely used for every selected platform. Make slow or offline network conditions usable wherever feasible without compromising required online features."
-    print("\nArt direction is optional. For example: ‘warm hand-painted fantasy, soft sunrise lighting, chunky readable silhouettes, parchment and moss palette’.\nLeave this blank and Gemma 4 12B will create an original art direction for asset work.")
-    art_direction_input = " ".join(_prompt("Optional art direction", "").split())
+    print("\nOptional art direction:")
+    _print_example("Warm hand-painted fantasy, soft sunrise lighting, chunky readable silhouettes, parchment and moss palette.")
+    print("Leave this blank and Gemma 4 12B will create an original art direction for asset work.")
+    art_direction_input = " ".join(input("> ").split())
     values = {
         "project_name": project_name,
         "project_slug": project_slug,
@@ -1127,10 +1147,11 @@ def configure(path: Path) -> None:
         json.dumps([legacy_test_command], separators=(",", ":")) if legacy_test_command else ""
     )
     values["SUPERVISOR_TEST_COMMANDS"] = _prompt(
-        "Validation commands as a JSON array (for example [\"npm test\",\"npm run build\"])",
-        test_commands_default,
+        "Validation commands as a JSON array", test_commands_default, example='["npm test","npm run build"]'
     )
-    values["SUPERVISOR_CODING_AGENTS"] = _prompt("Coding agents in execution order (for example qwen,openhands,codex)", _value(existing, "SUPERVISOR_CODING_AGENTS"))
+    values["SUPERVISOR_CODING_AGENTS"] = _prompt(
+        "Coding agents in execution order", _value(existing, "SUPERVISOR_CODING_AGENTS"), example="qwen,openhands,codex"
+    )
     # Pipeline gates are intentionally fixed. Agent selection and retry counts
     # remain configurable, but no interactive setting may skip independent QA.
     values.pop("SUPERVISOR_AGENT_ORDER", None)

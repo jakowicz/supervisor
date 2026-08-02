@@ -94,6 +94,16 @@ def test_project_slug_is_safe_for_a_workspace_path():
     assert manage._project_slug("Final Fantasy V: Reborn!") == "final-fantasy-v-reborn"
 
 
+def test_interactive_examples_are_coloured_and_follow_the_question(monkeypatch, capsys):
+    monkeypatch.setattr("builtins.input", lambda _prompt: "A task app")
+
+    assert manage._required("Describe the product", example="A thoughtful task manager.") == "A task app"
+
+    output = capsys.readouterr().out
+    assert output.index("Describe the product:") < output.index(manage.EXAMPLE_COLOUR)
+    assert f"{manage.EXAMPLE_COLOUR}Example: A thoughtful task manager.{manage.TERMINAL_RESET}" in output
+
+
 def test_project_statuses_reports_progress_and_resume_command_inputs(tmp_path: Path):
     projects = tmp_path / "projects"
     workspace = projects / "task-app"
