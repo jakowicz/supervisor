@@ -924,7 +924,8 @@ def create_initial_brief(path: Path, *, project_name: str, force: bool = False) 
 
 def create_initial_brief_non_interactive(
     path: Path, *, project_name: str, category: str, product: str, references: str,
-    targets: list[str] | None = None, art_direction: str = "", force: bool = False,
+    targets: list[str] | None = None, game_characteristics: list[str] | None = None,
+    art_direction: str = "", force: bool = False,
 ) -> Path:
     """Create a deterministic initial brief for CI and scripted project setup."""
 
@@ -939,13 +940,14 @@ def create_initial_brief_non_interactive(
     _prepare_project_workspace(path.parent)
     selected_targets = list(dict.fromkeys((*DEFAULT_WEB_TARGETS, *(targets or []))))
     profile = APPLICATION_BRIEF_PROFILES.get(category)
-    characteristics = ("- [x] 2D presentation\n- [x] Single-player game\n- [x] Role-playing game (RPG)." if category == "Game" else "- Not specified.")
+    selected_characteristics = game_characteristics or ["2D presentation", "Single-player game", "Role-playing game (RPG)"]
+    characteristics = ("\n".join(f"- [x] {item}" for item in selected_characteristics) if category == "Game" else "- Not specified.")
     capabilities = "\n".join(f"- {item}" for item in (GAME_FIRST_RELEASE_CAPABILITIES if category == "Game" else profile["capabilities"]))
     deferred = "\n".join(f"- {item}" for item in (GAME_DEFERRED_CAPABILITIES if category == "Game" else profile["deferred"]))
     if category == "Game":
         users, outcome, first_session = "- Casual players\n- Adult players", "Progress through a story or campaign.", "Finish a first battle and understand how saving works."
-        shared = "\n".join(f"- {item}" for item in _game_shared_requirement_options(["Role-playing game (RPG)"]))
-        details = {target: _game_target_requirements(target, ["Role-playing game (RPG)"]) for target in selected_targets}
+        shared = "\n".join(f"- {item}" for item in _game_shared_requirement_options(selected_characteristics))
+        details = {target: _game_target_requirements(target, selected_characteristics) for target in selected_targets}
         art = _record_initial_art_direction(path.parent, slug, art_direction)
         audio = _record_initial_audio_direction(path.parent, "")
     else:
@@ -1599,6 +1601,7 @@ supervisor-dashboard --serve to view the local dashboard.""",
     initial_parser.add_argument("--product", help="Product description for --non-interactive.")
     initial_parser.add_argument("--reference", help="Functional reference for --non-interactive.")
     initial_parser.add_argument("--targets", help="Comma-separated additional targets for --non-interactive.")
+    initial_parser.add_argument("--game-characteristics", help="Comma-separated game characteristics for --non-interactive game briefs.")
     initial_parser.add_argument("--art-direction", default="", help="Optional game art direction for --non-interactive.")
     projects_parser = commands.add_parser("projects", help="List named runbook-factory projects and their durable progress.")
     projects_parser.add_argument("--projects-dir", type=Path, default=DEFAULT_PROJECTS_DIRECTORY, help="Directory containing named project workspaces (default: projects).")
@@ -1632,7 +1635,8 @@ supervisor-dashboard --serve to view the local dashboard.""",
                 if not all((arguments.project_name, arguments.category, arguments.product, arguments.reference)):
                     parser.error("--project-name, --category, --product, and --reference are required with initial --non-interactive.")
                 targets = [item.strip() for item in (arguments.targets or "").split(",") if item.strip()]
-                brief_path = create_initial_brief_non_interactive(output, project_name=project_name, category=arguments.category, product=arguments.product, references=arguments.reference, targets=targets, art_direction=arguments.art_direction, force=arguments.force)
+                game_characteristics = [item.strip() for item in (arguments.game_characteristics or "").split(",") if item.strip()]
+                brief_path = create_initial_brief_non_interactive(output, project_name=project_name, category=arguments.category, product=arguments.product, references=arguments.reference, targets=targets, game_characteristics=game_characteristics, art_direction=arguments.art_direction, force=arguments.force)
             else:
                 brief_path = create_initial_brief(output, project_name=project_name, force=arguments.force)
         except ValueError as error:

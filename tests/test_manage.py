@@ -194,6 +194,32 @@ def test_golden_scripted_initial_command_creates_a_resumable_workspace(monkeypat
     assert "ART_DIRECTION_MODE=user_provided" in (workspace / ".env").read_text(encoding="utf-8")
 
 
+def test_non_interactive_game_initial_preserves_requested_characteristics_and_targets(monkeypatch, tmp_path: Path):
+    checkout = tmp_path / "supervisor"
+    checkout.mkdir()
+    (checkout / "pyproject.toml").write_text("", encoding="utf-8")
+    (checkout / ".git").mkdir()
+    (tmp_path / ".env").write_text("SUPERVISOR_CODING_AGENTS=codex\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    brief = tmp_path / "projects" / "football-trivia" / "INITIAL.md"
+    manage.create_initial_brief_non_interactive(
+        brief,
+        project_name="Football trivia",
+        category="Game",
+        product="A football trivia game.",
+        references="QuizUp for short trivia sessions only",
+        targets=["Android phone", "iPhone (iOS)"],
+        game_characteristics=["2D presentation", "Single-player game", "Puzzle, card, board, or turn-based game"],
+    )
+
+    rendered = brief.read_text(encoding="utf-8")
+    assert "- [x] Android phone" in rendered
+    assert "- [x] iPhone (iOS)" in rendered
+    assert "Puzzle, card, board, or turn-based game" in rendered
+    assert "Role-playing game (RPG)" not in rendered
+
+
 def test_project_slug_is_safe_for_a_workspace_path():
     assert manage._project_slug("Final Fantasy V: Reborn!") == "final-fantasy-v-reborn"
 
