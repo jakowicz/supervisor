@@ -275,6 +275,16 @@ PRODUCT_DESCRIPTION_EXAMPLES = {
     "Service, API, or background system": "An API and background processing service that receives files, validates them, and delivers reliable results to client applications.",
     "Other": "A focused product that helps its intended users complete one valuable workflow clearly and reliably.",
 }
+FUNCTIONAL_REFERENCE_EXAMPLES = {
+    "Consumer application": "Todoist for task capture, projects, priorities, and recurring work.",
+    "Business / internal application": "Zendesk for ticket queues, assignment, status, and operational workflows.",
+    "Game": "Final Fantasy V for turn-based party combat and world progression.",
+    "Document, planning, or content system": "Notion for structured pages, databases, collaboration, and publishing workflows.",
+    "Operating-system or device utility": "macOS Disk Utility for clear status, safe actions, and recovery-oriented workflows.",
+    "Developer tool or platform": "Visual Studio Code for editing, navigation, debugging, and extensions.",
+    "Service, API, or background system": "Stripe for clear API contracts, developer documentation, reliable asynchronous processing, and operational visibility.",
+    "Other": "A well-known product with a comparable user workflow and outcome.",
+}
 
 RUNBOOK_TEMPLATE = """---
 task_id: T001
@@ -717,7 +727,7 @@ def create_initial_brief(path: Path, *, project_name: str, force: bool = False) 
         "support": support,
         "references": _required(
             "Reference games, apps, or products that this should be functionally similar to",
-            example="Final Fantasy V for turn-based party combat and world progression." if category == "Game" else "Todoist for task capture, projects, priorities, and recurring work.",
+            example=FUNCTIONAL_REFERENCE_EXAMPLES[category],
         ),
         "open_decisions": "- Infer suitable technical services, including analytics, from the product brief and selected platforms.\n- Infer remaining product decisions from the functional references unless they conflict with an explicit requirement.\n- Record only genuine ambiguities that cannot be resolved safely from the available context.",
     }
