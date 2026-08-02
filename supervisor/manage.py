@@ -62,6 +62,10 @@ DEFAULTS = {
     "ASSET_GENERATOR_COMMAND": "./.venv/bin/python scripts/comfy_asset_generator.py {task_file}",
     "ASSET_FINISHER_COMMAND": "./.venv/bin/python scripts/asset_finisher.py {task_file}",
     "ASSET_QA_COMMAND": "./.venv/bin/python scripts/asset_qa_worker.py {task_file}",
+    "OLLAMA_BASE_URL": "http://127.0.0.1:11434",
+    "LOCAL_VISION_MODEL": "gemma4:12b",
+    "ASSET_VISION_QA_ENABLED": "false",
+    "ASSET_VISION_TIMEOUT_SECONDS": "180",
 }
 
 DEFAULT_SUPERVISOR_URL = "git@github.com:jakowicz/supervisor.git"

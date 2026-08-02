@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import json
+import os
 from pathlib import Path
+from urllib.error import URLError
+from urllib.request import Request, urlopen
 
 from supervisor.art_assets import asset_ids, asset_root, load_manifest, sha256
 from supervisor.models import Evidence, NextStep, Status, Task, WorkerResult, model_to_dict
@@ -18,6 +22,42 @@ def is_png(path: Path) -> bool:
         return False
 
 
+def vision_review(path: Path) -> tuple[bool, str]:
+    """Apply a narrow local visual rubric; never upload the asset remotely."""
+
+    base_url = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
+    model = os.getenv("LOCAL_VISION_MODEL", "gemma4:12b")
+    prompt = (
+        "You are the Emberhold local art QA gate. Review this single generated "
+        "mobile-game asset against this original style: lanternlit hearth-fantasy; "
+        "tactile stone, warm timber, aged brass, kiln-charcoal shadows, ember orange "
+        "and moss-teal accents, bold readable playful silhouette. Reject copied or "
+        "recognisably branded game art, visible text/logos/watermarks, extra limbs, "
+        "unreadable silhouette, obvious deformation, severe crop or low-quality blur. "
+        "Return JSON only: {\"decision\":\"pass\"|\"fail\",\"summary\":string,\"flags\":[string]}."
+    )
+    payload = {
+        "model": model,
+        "stream": False,
+        "format": "json",
+        "messages": [{"role": "user", "content": prompt, "images": [base64.b64encode(path.read_bytes()).decode("ascii")]}],
+        "options": {"temperature": 0},
+    }
+    try:
+        request = Request(f"{base_url}/api/chat", data=json.dumps(payload).encode("utf-8"), headers={"Content-Type": "application/json"})
+        with urlopen(request, timeout=int(os.getenv("ASSET_VISION_TIMEOUT_SECONDS", "180"))) as response:
+            body = json.loads(response.read().decode("utf-8"))
+        verdict = json.loads(body["message"]["content"])
+        decision = verdict.get("decision")
+        if decision not in {"pass", "fail"}:
+            return False, "local vision reviewer returned no valid pass/fail decision"
+        summary = str(verdict.get("summary", "no summary"))
+        flags = verdict.get("flags", [])
+        return decision == "pass", f"{summary}; flags: {', '.join(map(str, flags)) or 'none'}"
+    except (OSError, KeyError, ValueError, URLError, json.JSONDecodeError) as error:
+        return False, f"local vision reviewer unavailable or invalid: {error}"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("task_file")
@@ -26,6 +66,10 @@ def main() -> None:
     repo_root = repository_root()
     checked: list[str] = []
     errors: list[str] = []
+    # A retained large coding model can make a second vision model swap slowly
+    # or expensively on a local machine.  Technical/provenance QA is mandatory;
+    # vision review is an explicit art-session choice.
+    vision_enabled = os.getenv("ASSET_VISION_QA_ENABLED", "false").lower() == "true"
     for asset_id in asset_ids(task):
         try:
             manifest = load_manifest(repo_root, asset_id)
@@ -39,6 +83,12 @@ def main() -> None:
                 errors.append(f"{asset_id}: prohibited protected-IP reference in generation prompt")
             elif not manifest.get("provenance", {}).get("original_only"):
                 errors.append(f"{asset_id}: original-art provenance not recorded")
+            elif vision_enabled:
+                passed, review = vision_review(selected)
+                if not passed:
+                    errors.append(f"{asset_id}: local visual QA rejected it: {review}")
+                else:
+                    checked.append(str(selected.relative_to(repo_root)))
             else:
                 checked.append(str(selected.relative_to(repo_root)))
         except (OSError, KeyError, json.JSONDecodeError) as error:
