@@ -882,6 +882,64 @@ def create_initial_brief(path: Path, *, project_name: str, force: bool = False) 
     return path
 
 
+def create_initial_brief_non_interactive(
+    path: Path, *, project_name: str, category: str, product: str, references: str,
+    targets: list[str] | None = None, art_direction: str = "", force: bool = False,
+) -> Path:
+    """Create a deterministic initial brief for CI and scripted project setup."""
+
+    path = path.expanduser().resolve()
+    if path.exists() and not force:
+        raise ValueError(f"Initial brief already exists: {path}. Use --force to replace it.")
+    if category not in PRODUCT_CATEGORIES:
+        raise ValueError(f"Unknown product category: {category}")
+    if not product.strip() or not references.strip():
+        raise ValueError("--product and --reference are required with --non-interactive.")
+    slug = _project_slug(project_name)
+    _prepare_project_workspace(path.parent)
+    selected_targets = list(dict.fromkeys((*DEFAULT_WEB_TARGETS, *(targets or []))))
+    profile = APPLICATION_BRIEF_PROFILES.get(category)
+    characteristics = ("- [x] 2D presentation\n- [x] Single-player game\n- [x] Role-playing game (RPG)." if category == "Game" else "- Not specified.")
+    capabilities = "\n".join(f"- {item}" for item in (GAME_FIRST_RELEASE_CAPABILITIES if category == "Game" else profile["capabilities"]))
+    deferred = "\n".join(f"- {item}" for item in (GAME_DEFERRED_CAPABILITIES if category == "Game" else profile["deferred"]))
+    if category == "Game":
+        users, outcome, first_session = "- Casual players\n- Adult players", "Progress through a story or campaign.", "Finish a first battle and understand how saving works."
+        shared = "\n".join(f"- {item}" for item in _game_shared_requirement_options(["Role-playing game (RPG)"]))
+        details = {target: _game_target_requirements(target, ["Role-playing game (RPG)"]) for target in selected_targets}
+        art = _record_initial_art_direction(path.parent, slug, art_direction)
+    else:
+        users, outcome, first_session = f"- {profile['audiences'][0]}", profile["outcomes"][0], profile["first_sessions"][0]
+        shared = "\n".join(f"- {item}" for item in _application_shared_requirements(category))
+        details = {target: "\n".join(f"- {item}" for item in _application_target_requirement_options(target)) for target in selected_targets}
+        art = "- Not configured initially; later asset-required R-series work must configure it."
+    values = {
+        "project_name": project_name, "project_slug": slug, "product": product.strip(), "category": category,
+        "target_family": "Automated compatible profile", "game_characteristics": characteristics,
+        "shared_requirements": shared, "users": users, "primary_outcome": outcome, "first_session": first_session,
+        "capabilities": capabilities, "deferred": deferred,
+        "technology": "Determine from the product brief and selected platforms.",
+        "constraints": "Determine from the product brief and selected platforms.",
+        "non_goals": "No copied branding, assets, text, layouts, or distinctive interactions.",
+        "parity": "Use a shared core with platform adaptations only where necessary.",
+        "sync": "Use remote account-linked state with safe local cache where applicable.",
+        "compliance": "Provide accessibility, localisation, privacy, and applicable platform requirements.",
+        "support": "Support widely used devices and feasible slow-network behaviour.",
+        "references": references.strip(), "art_direction": art,
+        "open_decisions": "- Resolve remaining decisions from the brief and references; record only genuine ambiguities.",
+    }
+    path.write_text(_render_initial_brief(values, selected_targets, details), encoding="utf-8")
+    return path
+
+
+def configure_non_interactive(path: Path) -> None:
+    """Ensure a generated configuration is migrated without prompting for secrets."""
+
+    migrate_env(path, project_root=path.parent)
+    values = dotenv_values(path)
+    if not values.get("SUPERVISOR_CODING_AGENTS"):
+        raise ValueError(f"{path} needs SUPERVISOR_CODING_AGENTS before non-interactive execution.")
+
+
 def _collection_progress(runbooks_directory: Path, database_path: Path) -> tuple[int, int, str | None]:
     """Return accepted count, pending count, and the next runbook without creating state."""
 
@@ -1488,11 +1546,18 @@ supervisor-dashboard --serve to view the local dashboard.""",
     commands = parser.add_subparsers(dest="command", required=True)
     configure_parser = commands.add_parser("configure", help="Interactively create or update an ignored .env configuration file.")
     configure_parser.add_argument("--config", type=Path, help="Configuration file to write (default: project-root/.env).")
+    configure_parser.add_argument("--non-interactive", action="store_true", help="Apply safe migrations and validate existing configuration without prompts.")
     initial_parser = commands.add_parser("initial", help="Interactively create a named project's brief consumed by the first factory runbook.")
     initial_parser.add_argument("--project-name", help="Project name; prompted for when omitted. The default brief path is projects/<project-name>/INITIAL.md.")
     initial_parser.add_argument("--projects-dir", type=Path, default=DEFAULT_PROJECTS_DIRECTORY, help="Directory containing generated project workspaces (default: projects).")
     initial_parser.add_argument("--output", type=Path, help="Explicit brief path; normally omit this and let --project-name choose projects/<project-name>/INITIAL.md.")
     initial_parser.add_argument("--force", action="store_true", help="Replace an existing initial brief after collecting new answers.")
+    initial_parser.add_argument("--non-interactive", action="store_true", help="Create and configure a brief from flags; intended for CI and scripts.")
+    initial_parser.add_argument("--category", choices=PRODUCT_CATEGORIES, help="Product category for --non-interactive.")
+    initial_parser.add_argument("--product", help="Product description for --non-interactive.")
+    initial_parser.add_argument("--reference", help="Functional reference for --non-interactive.")
+    initial_parser.add_argument("--targets", help="Comma-separated additional targets for --non-interactive.")
+    initial_parser.add_argument("--art-direction", default="", help="Optional game art direction for --non-interactive.")
     projects_parser = commands.add_parser("projects", help="List named runbook-factory projects and their durable progress.")
     projects_parser.add_argument("--projects-dir", type=Path, default=DEFAULT_PROJECTS_DIRECTORY, help="Directory containing named project workspaces (default: projects).")
     migration_parser = commands.add_parser("env-migrate", help="Apply versioned, non-destructive .env migrations and record an audit log.")
@@ -1514,18 +1579,25 @@ supervisor-dashboard --serve to view the local dashboard.""",
     arguments = parser.parse_args()
     if arguments.command == "configure":
         config = arguments.config or (project_supervisor_checkout(Path.cwd()).parent / ".env")
-        configure(config.expanduser().resolve())
+        config = config.expanduser().resolve()
+        configure_non_interactive(config) if arguments.non_interactive else configure(config)
     if arguments.command == "initial":
         try:
             project_name = arguments.project_name or _required("Project name")
             project_slug = _project_slug(project_name)
             output = arguments.output or arguments.projects_dir / project_slug / "INITIAL.md"
-            brief_path = create_initial_brief(output, project_name=project_name, force=arguments.force)
+            if arguments.non_interactive:
+                if not all((arguments.project_name, arguments.category, arguments.product, arguments.reference)):
+                    parser.error("--project-name, --category, --product, and --reference are required with initial --non-interactive.")
+                targets = [item.strip() for item in (arguments.targets or "").split(",") if item.strip()]
+                brief_path = create_initial_brief_non_interactive(output, project_name=project_name, category=arguments.category, product=arguments.product, references=arguments.reference, targets=targets, art_direction=arguments.art_direction, force=arguments.force)
+            else:
+                brief_path = create_initial_brief(output, project_name=project_name, force=arguments.force)
         except ValueError as error:
             parser.error(str(error))
         print(f"Wrote initial project brief: {brief_path}")
         print(f"Now configuring the runnable Supervisor project profile: {brief_path.parent / '.env'}")
-        configure(brief_path.parent / ".env")
+        configure_non_interactive(brief_path.parent / ".env") if arguments.non_interactive else configure(brief_path.parent / ".env")
     if arguments.command == "projects":
         print_projects(arguments.projects_dir.expanduser().resolve(), Path.cwd() / "runbooks")
     if arguments.command == "env-migrate":

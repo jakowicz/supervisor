@@ -122,6 +122,29 @@ def test_only_games_require_initial_art_direction():
     assert not manage._requires_initial_art_direction("Service, API, or background system")
 
 
+def test_non_interactive_initial_creates_a_runnable_project_workspace(monkeypatch, tmp_path: Path):
+    checkout = tmp_path / "supervisor"
+    checkout.mkdir()
+    (checkout / "pyproject.toml").write_text("", encoding="utf-8")
+    (checkout / ".git").mkdir()
+    (checkout / ".env.example").write_text("SUPERVISOR_CODING_AGENTS=codex\n", encoding="utf-8")
+    (checkout / ".secrets.env.example").write_text("# private\n", encoding="utf-8")
+    (tmp_path / ".env").write_text("SUPERVISOR_CODING_AGENTS=codex\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    brief = tmp_path / "projects" / "notes" / "INITIAL.md"
+
+    manage.create_initial_brief_non_interactive(
+        brief, project_name="Notes", category="Consumer application", product="A notes app", references="Notion",
+    )
+    manage.configure_non_interactive(brief.parent / ".env")
+
+    assert brief.is_file()
+    assert (brief.parent / ".state").is_dir()
+    assert (brief.parent / ".secrets.env.example").is_file()
+    assert "SUPERVISOR_CODING_AGENTS=codex" in (brief.parent / ".env").read_text(encoding="utf-8")
+    assert "## Art direction" in brief.read_text(encoding="utf-8")
+
+
 def test_project_slug_is_safe_for_a_workspace_path():
     assert manage._project_slug("Final Fantasy V: Reborn!") == "final-fantasy-v-reborn"
 
