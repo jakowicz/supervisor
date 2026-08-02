@@ -290,7 +290,7 @@ def test_registered_collections_follow_explicit_children_recursively(tmp_path: P
     (implementation / "INITIAL.md").write_text("# Brief\n", encoding="utf-8")
     calls = []
 
-    def run_collection(directory, dry_run, continue_on_nonpass, database_path, initial_context):
+    def run_collection(directory, dry_run, continue_on_nonpass, database_path, initial_context, repo_root=None):
         calls.append((directory, database_path, initial_context))
         return True
 

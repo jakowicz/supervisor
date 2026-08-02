@@ -195,12 +195,12 @@ given for that task explicitly.""",
                 parser.error(str(error))
         if arguments.run_all:
             completed = _run_collection_until_complete(
-                runbooks_directory, arguments.dry_run, arguments.continue_on_nonpass, database_path, initial_context
+                runbooks_directory, arguments.dry_run, arguments.continue_on_nonpass, database_path, initial_context, repo_root
             )
             if completed:
-                _run_registered_collections(runbooks_directory, arguments.dry_run, arguments.continue_on_nonpass, project_workspace or project_root)
+                _run_registered_collections(runbooks_directory, arguments.dry_run, arguments.continue_on_nonpass, project_workspace or project_root, repo_root)
         else:
-            _run_task_range(runbooks, arguments.dry_run, arguments.continue_on_nonpass, database_path, initial_context)
+            _run_task_range(runbooks, arguments.dry_run, arguments.continue_on_nonpass, database_path, initial_context, repo_root)
         return
     if arguments.runbook:
         # An explicit path follows normal CLI behaviour: relative to the
@@ -625,7 +625,7 @@ def _project_workspace(value: str) -> Path:
 
 
 def _run_task_range(
-    runbooks: list[Path], dry_run: bool, continue_on_nonpass: bool, database_path: Path, initial_context: str = ""
+    runbooks: list[Path], dry_run: bool, continue_on_nonpass: bool, database_path: Path, initial_context: str = "", repo_root: Path | None = None
 ) -> bool:
     """Run independent CLI invocations sequentially in one shared worktree."""
 
@@ -650,6 +650,7 @@ def _run_task_range(
         package_root = str(Path(__file__).resolve().parents[1])
         inherited_path = environment.get("PYTHONPATH", "")
         environment["PYTHONPATH"] = package_root if not inherited_path else package_root + os.pathsep + inherited_path
+        environment["SUPERVISOR_REPO_ROOT"] = str((repo_root or Path.cwd()).resolve())
         environment["SUPERVISOR_DATABASE_PATH"] = str(database_path)
         if initial_context:
             environment["SUPERVISOR_INITIAL_CONTEXT"] = initial_context
@@ -675,7 +676,7 @@ def _run_task_range(
 
 
 def _run_collection_until_complete(
-    directory: Path, dry_run: bool, continue_on_nonpass: bool, database_path: Path, initial_context: str
+    directory: Path, dry_run: bool, continue_on_nonpass: bool, database_path: Path, initial_context: str, repo_root: Path | None = None
 ) -> bool:
     """Run a collection until no unaccepted task remains.
 
@@ -699,12 +700,12 @@ def _run_collection_until_complete(
             return True
         wave += 1
         print(f"COLLECTION WAVE {wave:02d} · {len(pending)} pending tasks in {directory}", file=sys.stderr, flush=True)
-        if not _run_task_range(pending, dry_run, continue_on_nonpass, database_path, initial_context):
+        if not _run_task_range(pending, dry_run, continue_on_nonpass, database_path, initial_context, repo_root):
             return False
 
 
 def _run_registered_collections(
-    directory: Path, dry_run: bool, continue_on_nonpass: bool, project_workspace: Path | None = None
+    directory: Path, dry_run: bool, continue_on_nonpass: bool, project_workspace: Path | None = None, repo_root: Path | None = None
 ) -> None:
     """Follow explicit child-collection registrations after a parent completes."""
 
@@ -729,8 +730,8 @@ def _run_registered_collections(
         else:
             child_database = child_directory.parent / ".state" / "supervisor.sqlite3"
         child_context = _initial_document(child_directory)
-        if _run_collection_until_complete(child_directory, dry_run, continue_on_nonpass, child_database, child_context):
-            _run_registered_collections(child_directory, dry_run, continue_on_nonpass, project_workspace)
+        if _run_collection_until_complete(child_directory, dry_run, continue_on_nonpass, child_database, child_context, repo_root):
+            _run_registered_collections(child_directory, dry_run, continue_on_nonpass, project_workspace, repo_root)
 
 
 if __name__ == "__main__":
