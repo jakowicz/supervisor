@@ -726,7 +726,23 @@ def _prepare_project_workspace(workspace: Path) -> None:
     template_root = Path(__file__).resolve().parents[1]
     config = workspace / ".env"
     if not config.exists():
-        config.write_text((template_root / ".env.example").read_text(encoding="utf-8"), encoding="utf-8")
+        # A factory has already been configured to run its own F-series. Its
+        # generated project must start runnable too, rather than requiring a
+        # second interactive configuration pass before F001. Copy that active
+        # non-secret contract when available; otherwise use the safe template.
+        try:
+            source = project_supervisor_checkout(Path.cwd()).parent / ".env"
+        except RuntimeError:
+            source = Path()
+        if source.is_file():
+            retained = []
+            for line in source.read_text(encoding="utf-8").splitlines():
+                key = line.split("=", 1)[0].strip() if "=" in line else ""
+                if key not in SECRET_ENV_KEYS:
+                    retained.append(line)
+            config.write_text("\n".join(retained).rstrip() + "\n", encoding="utf-8")
+        else:
+            config.write_text((template_root / ".env.example").read_text(encoding="utf-8"), encoding="utf-8")
     secrets_example = workspace / ".secrets.env.example"
     if not secrets_example.exists():
         secrets_example.write_text((template_root / ".secrets.env.example").read_text(encoding="utf-8"), encoding="utf-8")

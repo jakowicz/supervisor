@@ -100,6 +100,22 @@ def test_preparing_named_project_workspace_owns_env_and_state(tmp_path: Path):
     assert "SUPERVISOR_DATABASE_PATH=.state/supervisor.sqlite3" in env
 
 
+def test_preparing_workspace_inherits_factory_configuration_without_secrets(monkeypatch, tmp_path: Path):
+    checkout = tmp_path / "supervisor"
+    checkout.mkdir()
+    (checkout / "pyproject.toml").write_text("", encoding="utf-8")
+    (checkout / ".git").mkdir()
+    (checkout / ".env.example").write_text("SUPERVISOR_CODING_AGENTS=codex\n", encoding="utf-8")
+    (tmp_path / ".env").write_text("SUPERVISOR_CODING_AGENTS=codex\nLANGFUSE_SECRET_KEY=must-not-copy\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    manage._prepare_project_workspace(tmp_path / "projects" / "moonlit")
+
+    generated = (tmp_path / "projects" / "moonlit" / ".env").read_text(encoding="utf-8")
+    assert "SUPERVISOR_CODING_AGENTS=codex" in generated
+    assert "LANGFUSE_SECRET_KEY" not in generated
+
+
 def test_project_slug_is_safe_for_a_workspace_path():
     assert manage._project_slug("Final Fantasy V: Reborn!") == "final-fantasy-v-reborn"
 
