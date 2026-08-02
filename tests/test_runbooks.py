@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from supervisor.runbooks import load_task
 
 
@@ -48,3 +50,27 @@ def test_runbook_accepts_opt_in_asset_metadata(tmp_path):
     assert task.asset_impact == "required"
     assert task.asset_ids == ["gate", "gate_build"]
     assert task.visual_style_version == "project-v1"
+
+
+def test_r_series_runbook_must_explicitly_assess_assets(tmp_path):
+    path = tmp_path / "R0001.md"
+    path.write_text(
+        "---\ntask_id: R0001\nsequence: 1\ntitle: Missing asset assessment\nbrowser_impact: not_applicable\nplaywright_spec:\n---\n"
+        "## Objective\n\nDo the work.\n\n## Acceptance criteria\n\n- The work is done.\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="must declare asset metadata"):
+        load_task(path)
+
+
+def test_r_series_asset_task_requires_stable_asset_ids(tmp_path):
+    path = tmp_path / "R0001.md"
+    path.write_text(
+        "---\ntask_id: R0001\nsequence: 1\ntitle: Asset work\nbrowser_impact: not_applicable\nplaywright_spec:\nasset_impact: required\nasset_ids:\n---\n"
+        "## Objective\n\nDo the work.\n\n## Acceptance criteria\n\n- The work is done.\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="has no asset_ids"):
+        load_task(path)

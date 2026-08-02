@@ -32,6 +32,22 @@ def load_task(path: Path) -> Task:
     missing = required - metadata.keys()
     if missing:
         raise ValueError(f"{path} is missing metadata: {', '.join(sorted(missing))}")
+    is_r_series = re.fullmatch(r"R\d+", metadata["task_id"]) is not None
+    if is_r_series:
+        asset_metadata = {"asset_impact", "asset_ids"}
+        missing_asset_metadata = asset_metadata - metadata.keys()
+        if missing_asset_metadata:
+            raise ValueError(
+                f"{path} is an R-series runbook and must declare asset metadata: "
+                f"{', '.join(sorted(missing_asset_metadata))}"
+            )
+        if metadata["asset_impact"] not in {"required", "not_applicable"}:
+            raise ValueError(f"{path} has invalid asset_impact; use required or not_applicable.")
+        declared_assets = [asset_id.strip() for asset_id in metadata["asset_ids"].split(",") if asset_id.strip()]
+        if metadata["asset_impact"] == "required" and not declared_assets:
+            raise ValueError(f"{path} requires assets but has no asset_ids.")
+        if metadata["asset_impact"] == "not_applicable" and declared_assets:
+            raise ValueError(f"{path} declares asset_ids but asset_impact is not_applicable.")
     criteria: list[str] = []
     current: list[str] = []
     for line in _section(document, "Acceptance criteria").splitlines():
