@@ -3,6 +3,12 @@ from .base import command_worker
 
 
 def run(task: Task, dry_run: bool = False) -> WorkerResult:
+    if task.browser_impact == "not_applicable":
+        return WorkerResult(
+            status=Status.PASS,
+            summary="Visual review not applicable to this runbook.",
+            recommended_next_step=NextStep.COMPLETE,
+        )
     if dry_run:
         return WorkerResult(
             status=Status.NEEDS_USER_REVIEW,
