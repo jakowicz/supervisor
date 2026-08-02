@@ -80,9 +80,21 @@ def main() -> None:
             cwd=browser_root, env=environment, capture_output=True, text=True, timeout=120,
         )
         log = completed.stdout + completed.stderr
-        screenshots = [str(path.relative_to(repo_root)) for path in artifact_dir.glob("*.png")]
         if completed.returncode != 0:
+            screenshots = [str(path.relative_to(repo_root)) for path in artifact_dir.glob("*.png")]
             emit(WorkerResult(status=Status.REPAIRABLE_FAILURE, summary="Playwright browser QA failed.", test_result="Playwright returned a failing exit code.", evidence=Evidence(browser_log=log, screenshots=screenshots), recommended_next_step=NextStep.RETRY_QWEN))
+            return
+        capture = subprocess.run(
+            ["node", str(browser_root / "scripts" / "capture_visual_evidence.cjs"), base_url, str(artifact_dir)],
+            cwd=browser_root,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        )
+        log += "\n===== Visual evidence capture =====\n" + capture.stdout + capture.stderr
+        screenshots = [str(path.relative_to(repo_root)) for path in artifact_dir.glob("*.png")]
+        if capture.returncode != 0:
+            emit(WorkerResult(status=Status.ENVIRONMENT_FAILURE, summary="Browser QA could not capture desktop and mobile visual evidence.", test_result="Playwright functional checks passed, but visual evidence capture failed.", evidence=Evidence(browser_log=log, screenshots=screenshots), recommended_next_step=NextStep.ASK_USER))
             return
         suite_name = "full" if full_suite else "smoke + task-specific"
         emit(WorkerResult(status=Status.PASS, summary=f"Playwright {suite_name} suite passed at desktop and mobile viewports with no browser errors.", test_result=f"Playwright {suite_name} suite passed.", evidence=Evidence(browser_log=log, screenshots=screenshots), browser_coverage=f"{suite_name}; specs: {', '.join(task.playwright_specs) or 'smoke only'}", recommended_next_step=NextStep.COMPLETE))

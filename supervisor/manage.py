@@ -49,6 +49,7 @@ DEFAULTS = {
     "OPENHANDS_COMMAND": "./.venv/bin/python scripts/openhands_worker.py {task_file}",
     "CODEX_COMMAND": "./.venv/bin/python scripts/codex_worker.py {task_file}",
     "BROWSER_QA_COMMAND": "./.venv/bin/python scripts/browser_worker.py {task_file}",
+    "VISUAL_REVIEW_COMMAND": "./.venv/bin/python scripts/visual_review_worker.py {task_file}",
 }
 
 DEFAULT_SUPERVISOR_URL = "git@github.com:jakowicz/supervisor.git"
