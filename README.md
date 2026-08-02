@@ -440,6 +440,20 @@ parent in `.supervisor/supervisor.sqlite3`, so generated task IDs such as
 `R0001` remain isolated across projects. Set `SUPERVISOR_DATABASE_PATH` only
 when deliberately sharing state.
 
+## Updating project configuration safely
+
+`supervisor update` fast-forwards the project-owned `supervisor/` checkout,
+reinstalls its CLI, then runs the newly downloaded version's environment
+migrations. Migrations are numbered and append-only: they add missing safe
+defaults, can carry forward a declared renamed key, never overwrite an existing
+project value, and append an audit record at
+`.state/supervisor-env-migrations.log` without recording secrets.
+
+Use `supervisor env-migrate --config .env` to inspect/apply the same migration
+step manually. Each future configuration change must add a migration entry in
+`supervisor/manage.py`; do not rely on copying `.env.example` over a project
+file.
+
 The batch starts D008 only after D007 is accepted. This prevents an unfinished
 or unreviewed task from becoming the implicit baseline for later work. For a
 known-independent batch, `--continue-on-nonpass` explicitly permits the next
@@ -461,7 +475,7 @@ its own work.
 | **OpenHands** (`openhands`) | OpenHands headless CLI, configured with the selected local/remote model. | One fallback implementation attempt if Qwen exhausts its retry budget. |
 | **Codex** (`codex`) | Codex CLI in workspace-write sandbox mode. | Up to three fallback implementation/repair attempts after OpenHands. A successful fallback Codex implementation proceeds directly to deterministic QA. |
 | **Codex final verifier/fixer** (`codex_final`) | The same Codex CLI, invoked with a verification-and-repair brief. | Mandatory after a successful Qwen or OpenHands implementation. Its initial independent review does not consume repair budget; after a demonstrated QA failure it receives the raw failing evidence and may repair/retry up to three times. |
-| **Independent Flutter test worker** (`test`) | Deterministic local Flutter commands, not an LLM. | Runs `flutter analyze`, `flutter test`, and `flutter build web --release` after a coding pass. |
+| **Independent test worker** (`test`) | Deterministic project-configured commands, not an LLM. | Runs the ordered `SUPERVISOR_TEST_COMMANDS` validation contract after a coding pass. Game projects start with Flutter analyse, test, and release-build commands. |
 | **Browser QA worker** (`browser`) | Local web server plus Playwright Chromium tests at desktop and mobile viewports. | Runs stable smoke tests, task-specific browser checks, captures screenshots, and fails on page/console errors. Every fifth task sequence runs the full suite. |
 | **Visual QA reviewer** (`visual_review`) | Optional independent visual-review command. | Reviews visual evidence when configured; a missing reviewer requests user review rather than silently accepting UI work. |
 | **Completion-contract auditor** (`completion_audit`) | Deterministic policy check, not an LLM. | Verifies that every acceptance criterion has evidence, documentation was considered, required browser coverage exists, and limitations are declared. |

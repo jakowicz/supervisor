@@ -91,6 +91,7 @@ def test_initialise_project_applies_the_game_pipeline_profile(monkeypatch, tmp_p
     config = (project / "supervisor" / ".env").read_text(encoding="utf-8")
     assert "SUPERVISOR_CODING_AGENTS=codex" in config
     assert "SUPERVISOR_AGENT_ORDER=codex,test,browser,visual_review,completion_audit,git_publish" in config
+    assert f"SUPERVISOR_TEST_COMMANDS={manage.GAME_TEST_COMMANDS_JSON}" in config
 
 
 def test_initialise_project_rejects_non_empty_directory(tmp_path: Path):
@@ -230,7 +231,35 @@ def test_update_workspace_fast_forwards_and_reinstalls(monkeypatch, tmp_path: Pa
     assert commands == [
         (["git", "pull", "--ff-only", "origin", "main"], checkout),
         (["/tools/python", "-m", "pip", "install", "-e", ".[dev]"], checkout),
+        (["/tools/python", "-m", "supervisor.manage", "env-migrate", "--config", str(checkout / ".env"), "--project-root", str(tmp_path)], checkout),
     ]
+
+
+def test_migrate_env_adds_missing_keys_preserves_values_and_records_safe_audit(tmp_path: Path):
+    config = tmp_path / "supervisor" / ".env"
+    config.parent.mkdir()
+    config.write_text("CODEX_MODEL=project-choice\n", encoding="utf-8")
+
+    changes = manage.migrate_env(config, project_root=tmp_path)
+
+    migrated = config.read_text(encoding="utf-8")
+    audit = (tmp_path / ".state" / "supervisor-env-migrations.log").read_text(encoding="utf-8")
+    assert "CODEX_MODEL=project-choice" in migrated
+    assert f"SUPERVISOR_ENV_SCHEMA_VERSION={manage.ENV_SCHEMA_VERSION}" in migrated
+    assert "SUPERVISOR_QWEN_IDLE_TIMEOUT_SECONDS=600" in migrated
+    assert any("added SUPERVISOR_QWEN_IDLE_TIMEOUT_SECONDS" in change for change in changes)
+    assert "project-choice" not in audit
+    assert manage.migrate_env(config, project_root=tmp_path) == []
+
+
+def test_migrate_env_seeds_flutter_validation_only_for_flutter_projects(tmp_path: Path):
+    config = tmp_path / "supervisor" / ".env"
+    config.parent.mkdir()
+    (tmp_path / "pubspec.yaml").write_text("name: game\n", encoding="utf-8")
+
+    manage.migrate_env(config, project_root=tmp_path)
+
+    assert f"SUPERVISOR_TEST_COMMANDS={manage.GAME_TEST_COMMANDS_JSON}" in config.read_text(encoding="utf-8")
 
 
 def test_update_workspace_refuses_tracked_changes(monkeypatch, tmp_path: Path):

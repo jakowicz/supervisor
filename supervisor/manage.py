@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import json
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.error import URLError
 from urllib.request import urlopen
@@ -56,10 +58,38 @@ DEFAULT_SUPERVISOR_URL = "git@github.com:jakowicz/supervisor.git"
 DEFAULT_INITIAL_BRIEF_PATH = Path(__file__).resolve().parents[2] / "runbooks" / "INITIAL.md"
 MINIMUM_PYTHON_VERSION = (3, 10)
 CODEX_MODELS = ("gpt-5.6-terra", "gpt-5.6-sol")
+GAME_TEST_COMMANDS = (
+    "flutter analyze --no-fatal-infos",
+    "flutter test",
+    "flutter build web --release",
+)
+GAME_TEST_COMMANDS_JSON = json.dumps(GAME_TEST_COMMANDS, separators=(",", ":"))
+ENV_SCHEMA_VERSION = 2
+# Keep migrations append-only. `supervisor update` installs the new checkout,
+# then launches its `env-migrate` command, so a release can safely change how
+# configuration works without replacing a project's private .env file.
+ENV_MIGRATIONS = {
+    1: {
+        "description": "establish versioned Supervisor environment configuration",
+        "add": {
+            "SUPERVISOR_QWEN_IDLE_TIMEOUT_SECONDS": "600",
+            "SUPERVISOR_PROGRESS_HEARTBEAT_SECONDS": "30",
+            "SUPERVISOR_CODING_AGENTS": "qwen,openhands,codex",
+            "CODEX_MODEL": "gpt-5.6-terra",
+        },
+        "rename": {},
+    },
+    2: {
+        "description": "move project validation from a built-in framework default to SUPERVISOR_TEST_COMMANDS",
+        "add": {},
+        "rename": {},
+    },
+}
 PROJECT_TYPE_DEFAULTS = {
     "game": {
         "SUPERVISOR_CODING_AGENTS": "codex",
         "SUPERVISOR_AGENT_ORDER": "codex,test,browser,visual_review,completion_audit,git_publish",
+        "SUPERVISOR_TEST_COMMANDS": GAME_TEST_COMMANDS_JSON,
     },
     "documents": {
         "SUPERVISOR_CODING_AGENTS": "codex",
@@ -477,6 +507,75 @@ def _write_env(path: Path, values: dict[str, str]) -> None:
     path.chmod(0o600)
 
 
+def migrate_env(path: Path, *, project_root: Path | None = None) -> list[str]:
+    """Apply append-only environment migrations without overwriting user values.
+
+    Migrations are deliberately declared above instead of inferred from
+    `.env.example`: an example file cannot safely express renamed variables,
+    changed semantics, or whether a new default is appropriate for an existing
+    project. Audit records never contain configuration values or secrets.
+    """
+
+    path = path.expanduser().resolve()
+    project_root = (project_root or path.parent.parent).expanduser().resolve()
+    existing = dotenv_values(path) if path.is_file() else {}
+    raw_version = existing.get("SUPERVISOR_ENV_SCHEMA_VERSION") or "0"
+    try:
+        current_version = int(raw_version)
+    except ValueError as error:
+        raise ValueError(f"Invalid SUPERVISOR_ENV_SCHEMA_VERSION in {path}: {raw_version!r}") from error
+    if current_version > ENV_SCHEMA_VERSION:
+        raise ValueError(
+            f"{path} uses environment schema {current_version}, newer than this Supervisor supports ({ENV_SCHEMA_VERSION})."
+        )
+
+    lines: list[str] = []
+    changes: list[str] = []
+    for version in range(current_version + 1, ENV_SCHEMA_VERSION + 1):
+        migration = ENV_MIGRATIONS[version]
+        for old_key, new_key in migration["rename"].items():
+            old_value = existing.get(old_key)
+            if old_value is not None and existing.get(new_key) is None:
+                lines.append(f"{new_key}={old_value}")
+                existing[new_key] = old_value
+                changes.append(f"v{version} renamed {old_key} to {new_key}")
+        for key, value in migration["add"].items():
+            if existing.get(key) is None:
+                lines.append(f"{key}={value}")
+                existing[key] = value
+                changes.append(f"v{version} added {key}")
+        if version == 2 and existing.get("SUPERVISOR_TEST_COMMANDS") is None and existing.get("SUPERVISOR_TEST_COMMAND") is None:
+            # Preserve prior Flutter behaviour only where the project itself
+            # proves it is Flutter. Every other project must choose its own
+            # validation contract through the interactive configuration flow.
+            if (project_root / "pubspec.yaml").is_file():
+                lines.append(f"SUPERVISOR_TEST_COMMANDS={GAME_TEST_COMMANDS_JSON}")
+                existing["SUPERVISOR_TEST_COMMANDS"] = GAME_TEST_COMMANDS_JSON
+                changes.append("v2 added Flutter validation commands after detecting pubspec.yaml")
+            else:
+                changes.append("v2 requires a project validation contract; run `supervisor configure`")
+        changes.append(f"v{version} recorded {migration['description']}")
+
+    if current_version != ENV_SCHEMA_VERSION:
+        lines.append(f"SUPERVISOR_ENV_SCHEMA_VERSION={ENV_SCHEMA_VERSION}")
+    if not lines:
+        return []
+    path.parent.mkdir(parents=True, exist_ok=True)
+    prefix = "" if not path.is_file() or not path.read_text(encoding="utf-8").strip() else "\n"
+    with path.open("a", encoding="utf-8") as output:
+        output.write(prefix + "# Applied by `supervisor update`; values already set above were preserved.\n")
+        output.write("\n".join(lines) + "\n")
+    path.chmod(0o600)
+
+    audit_path = project_root / ".state" / "supervisor-env-migrations.log"
+    audit_path.parent.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now(timezone.utc).isoformat()
+    with audit_path.open("a", encoding="utf-8") as audit:
+        for change in changes:
+            audit.write(f"{timestamp}\t{change}\n")
+    return changes
+
+
 def configure(path: Path) -> None:
     existing = dotenv_values(path) if path.is_file() else {}
     values = {key: str(value) for key, value in existing.items() if value is not None}
@@ -490,6 +589,14 @@ def configure(path: Path) -> None:
     values["SUPERVISOR_WORKER_TIMEOUT_SECONDS"] = _prompt("Worker timeout in seconds", _value(existing, "SUPERVISOR_WORKER_TIMEOUT_SECONDS"))
     values["SUPERVISOR_QWEN_IDLE_TIMEOUT_SECONDS"] = _prompt("Qwen no-progress timeout in seconds", _value(existing, "SUPERVISOR_QWEN_IDLE_TIMEOUT_SECONDS"))
     values["SUPERVISOR_PROGRESS_HEARTBEAT_SECONDS"] = _prompt("Terminal heartbeat in seconds", _value(existing, "SUPERVISOR_PROGRESS_HEARTBEAT_SECONDS"))
+    legacy_test_command = _value(existing, "SUPERVISOR_TEST_COMMAND")
+    test_commands_default = _value(existing, "SUPERVISOR_TEST_COMMANDS") or (
+        json.dumps([legacy_test_command], separators=(",", ":")) if legacy_test_command else ""
+    )
+    values["SUPERVISOR_TEST_COMMANDS"] = _prompt(
+        "Validation commands as a JSON array (for example [\"npm test\",\"npm run build\"])",
+        test_commands_default,
+    )
     values["SUPERVISOR_CODING_AGENTS"] = _prompt("Coding agents in execution order (for example qwen,openhands,codex)", _value(existing, "SUPERVISOR_CODING_AGENTS"))
     # Pipeline gates are intentionally fixed. Agent selection and retry counts
     # remain configurable, but no interactive setting may skip independent QA.
@@ -514,6 +621,7 @@ def configure(path: Path) -> None:
 
     # Bundled adapters and shared-local telemetry need no repeated setup
     # choices. Keep any project-specific visual reviewer unchanged.
+    values.pop("SUPERVISOR_TEST_COMMAND", None)
     for key in ("QWEN_CODER_COMMAND", "OPENHANDS_COMMAND", "CODEX_COMMAND", "BROWSER_QA_COMMAND", "VISUAL_REVIEW_COMMAND"):
         values[key] = _value(existing, key)
     models = ollama_models()
@@ -578,8 +686,13 @@ def update_workspace(start: Path | None = None) -> Path:
     print(f"Updating this project's Supervisor checkout in {repository_root}")
     _run(["git", "pull", "--ff-only", "origin", "main"], cwd=repository_root)
     project_python = repository_root / ".venv" / "bin" / "python"
-    _run([str(project_python) if project_python.is_file() else sys.executable, "-m", "pip", "install", "-e", ".[dev]"], cwd=repository_root)
-    print("Project Supervisor tools are up to date. Commit the changed supervisor submodule pointer in the parent project when ready.")
+    python = str(project_python) if project_python.is_file() else sys.executable
+    _run([python, "-m", "pip", "install", "-e", ".[dev]"], cwd=repository_root)
+    _run(
+        [python, "-m", "supervisor.manage", "env-migrate", "--config", str(repository_root / ".env"), "--project-root", str(repository_root.parent)],
+        cwd=repository_root,
+    )
+    print("Project Supervisor tools and .env migrations are up to date. Commit the changed supervisor submodule pointer in the parent project when ready.")
     return repository_root
 
 
@@ -767,6 +880,9 @@ supervisor-dashboard --serve to view the local dashboard.""",
     initial_parser = commands.add_parser("initial", help="Interactively create the project brief consumed by the first runbook.")
     initial_parser.add_argument("--output", type=Path, default=DEFAULT_INITIAL_BRIEF_PATH, help="Brief path (default: <project>/runbooks/INITIAL.md).")
     initial_parser.add_argument("--force", action="store_true", help="Replace an existing initial brief after collecting new answers.")
+    migration_parser = commands.add_parser("env-migrate", help="Apply versioned, non-destructive .env migrations and record an audit log.")
+    migration_parser.add_argument("--config", type=Path, default=Path(".env"), help="Project .env path (default: .env).")
+    migration_parser.add_argument("--project-root", type=Path, help="Project root for .state/supervisor-env-migrations.log.")
     init_parser = commands.add_parser("init", help="Interactively create and configure an empty Git project with the supervisor, runbooks, and shared Langfuse setup.")
     init_parser.add_argument("project", type=Path, nargs="?", help="Optional new or empty project directory; prompted for when omitted.")
     init_parser.add_argument("--supervisor-url", default=DEFAULT_SUPERVISOR_URL, help="Git URL for the supervisor submodule.")
@@ -789,6 +905,17 @@ supervisor-dashboard --serve to view the local dashboard.""",
         except ValueError as error:
             parser.error(str(error))
         print(f"Wrote initial project brief: {brief_path}")
+    if arguments.command == "env-migrate":
+        try:
+            changes = migrate_env(arguments.config, project_root=arguments.project_root)
+        except ValueError as error:
+            parser.error(str(error))
+        if changes:
+            print(f"Updated {arguments.config}:")
+            for change in changes:
+                print(f"- {change}")
+        else:
+            print(f"{arguments.config} already uses Supervisor environment schema {ENV_SCHEMA_VERSION}; no changes needed.")
     if arguments.command == "update":
         try:
             update_workspace(Path.cwd())
