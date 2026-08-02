@@ -248,6 +248,13 @@ def test_gb_writer_output_must_be_owned_by_its_design_batch(tmp_path: Path):
     assert _authoring_output_errors(writer) == []
     design.write_text(design.read_text(encoding="utf-8").replace("GB0001", "GB0002"), encoding="utf-8")
     assert _authoring_output_errors(writer) == ["G0001.md has design_authoring_batch GB0002"]
+    writer.write_text(
+        writer.read_text(encoding="utf-8").replace(
+            "- `G0001.md`", "\n".join(f"- `G000{index}.md`" for index in range(1, 7))
+        ),
+        encoding="utf-8",
+    )
+    assert _authoring_output_errors(writer) == ["declares 6 G-series design outputs; limit is 5"]
 
 
 def test_game_design_completion_gate_requires_accepted_final_audit(tmp_path: Path):

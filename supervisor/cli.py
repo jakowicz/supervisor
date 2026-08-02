@@ -660,6 +660,9 @@ def _authoring_output_errors(runbook: Path) -> list[str]:
     expected_ids = sorted(set(re.findall(r"(?:\.\./runbooks/)?(" + (r"G\d+" if is_game_design_author else r"R\d+") + r")\.md", output_section.group(1))))
     if not expected_ids:
         return ["declares no R-series outputs"]
+    if len(expected_ids) > 5:
+        series = "G-series design" if is_game_design_author else "R-series implementation"
+        return [f"declares {len(expected_ids)} {series} outputs; limit is 5"]
     errors: list[str] = []
     for task_id in expected_ids:
         output = (runbook.parent / f"{task_id}.md") if is_game_design_author else (runbook.parent.parent / "runbooks" / f"{task_id}.md")
