@@ -1,6 +1,9 @@
 {
   "name": "supervisor-browser-qa",
   "private": true,
+  "scripts": {
+    "test": "npx playwright test"
+  },
   "devDependencies": {
     "@playwright/test": "^1.58.0"
   }
