@@ -1,5 +1,5 @@
 {
-  "schema_version": 5,
+  "schema_version": 6,
   "migrations": [
     {
       "version": 1,
@@ -63,6 +63,16 @@
         "SUPERVISOR_FAILURE_SUMMARY_MODEL": "gemma4:12b",
         "SUPERVISOR_FAILURE_SUMMARY_TIMEOUT_SECONDS": "180",
         "SUPERVISOR_FAILURE_SUMMARY_KEEP_ALIVE": "0"
+      },
+      "rename": {}
+    },
+    {
+      "version": 6,
+      "description": "add configurable automatic or user-provided product art direction",
+      "add": {
+        "ART_DIRECTION_MODE": "gemma4_auto",
+        "ART_DIRECTION_MODEL": "gemma4:12b",
+        "ART_DIRECTION_BRIEF": ""
       },
       "rename": {}
     }

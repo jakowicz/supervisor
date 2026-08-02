@@ -39,6 +39,7 @@ def test_initial_brief_renderer_always_includes_responsive_web_and_pwa():
         "compliance": "WCAG",
         "support": "Modern browsers",
         "references": "Capabilities only; no copied expression.",
+        "art_direction": "- No custom direction supplied.",
         "open_decisions": "- Branding",
     }
 
@@ -52,6 +53,41 @@ def test_initial_brief_renderer_always_includes_responsive_web_and_pwa():
     assert "- [x] Progressive web app (PWA)" in rendered
     assert "### iPhone (iOS)" in rendered
     assert "- Workspace: `projects/task-app/`" in rendered
+    assert "## Art direction" in rendered
+
+
+def test_initial_art_direction_updates_only_art_values_in_project_env(monkeypatch, tmp_path: Path):
+    checkout = tmp_path / "supervisor"
+    checkout.mkdir()
+    (checkout / "pyproject.toml").write_text("", encoding="utf-8")
+    (checkout / ".git").mkdir()
+    config = checkout / ".env"
+    config.write_text("LANGFUSE_SECRET_KEY=secret\nART_STYLE_NAME=old\n", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    recorded = manage._record_initial_art_direction("moonlit", "cool moonlit science-fiction, clean geometric shapes")
+
+    updated = config.read_text(encoding="utf-8")
+    assert "LANGFUSE_SECRET_KEY=secret" in updated
+    assert "ART_DIRECTION_MODE=user_provided" in updated
+    assert "ART_DIRECTION_BRIEF=cool moonlit science-fiction, clean geometric shapes" in updated
+    assert "ART_PRODUCT_SLUG=moonlit" in updated
+    assert "The project `.env` has been updated" in recorded
+
+
+def test_blank_initial_art_direction_configures_gemma4(monkeypatch, tmp_path: Path):
+    checkout = tmp_path / "supervisor"
+    checkout.mkdir()
+    (checkout / "pyproject.toml").write_text("", encoding="utf-8")
+    (checkout / ".git").mkdir()
+    monkeypatch.chdir(tmp_path)
+
+    recorded = manage._record_initial_art_direction("moonlit", "")
+
+    updated = (checkout / ".env").read_text(encoding="utf-8")
+    assert "ART_DIRECTION_MODE=gemma4_auto" in updated
+    assert "ART_DIRECTION_MODEL=gemma4:12b" in updated
+    assert "Gemma 4 12B will create" in recorded
 
 
 def test_project_slug_is_safe_for_a_workspace_path():

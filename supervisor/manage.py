@@ -71,6 +71,9 @@ DEFAULTS = {
     "ART_STYLE_PROMPT": "original game asset, clear readable silhouette, premium hand-painted illustration, no text, no logo",
     "ART_NEGATIVE_PROMPT": "copied commercial game art, trademark, logo, watermark, text, UI screenshot, blurry, duplicate object",
     "ART_PROTECTED_IP_TERMS": "",
+    "ART_DIRECTION_MODE": "gemma4_auto",
+    "ART_DIRECTION_MODEL": "gemma4:12b",
+    "ART_DIRECTION_BRIEF": "",
     "APP_TIME_OBSERVATION_KEY": "flutter.project.time_observation",
     "SUPERVISOR_FAILURE_SUMMARY_ENABLED": "true",
     "SUPERVISOR_FAILURE_SUMMARY_MODEL": "gemma4:12b",
@@ -655,6 +658,10 @@ Additional selected targets:
 
 {values['references']}
 
+## Art direction
+
+{values['art_direction']}
+
 ## Open decisions
 
 {values['open_decisions']}
@@ -666,6 +673,62 @@ def _project_slug(project_name: str) -> str:
     if not slug:
         raise ValueError("Project name must include letters or numbers.")
     return slug
+
+
+def _set_env_values(path: Path, updates: dict[str, str]) -> None:
+    """Replace selected project-owned .env values without disturbing secrets."""
+
+    path = path.expanduser().resolve()
+    existing = path.read_text(encoding="utf-8") if path.is_file() else ""
+    lines = existing.splitlines()
+    remaining = set(updates)
+    rendered: list[str] = []
+    for line in lines:
+        key = line.split("=", 1)[0].strip() if "=" in line else ""
+        if key in updates:
+            rendered.append(f"{key}={updates[key]}")
+            remaining.remove(key)
+        else:
+            rendered.append(line)
+    if remaining:
+        if rendered and rendered[-1]:
+            rendered.append("")
+        rendered.append("# Art direction selected by `supervisor initial`.")
+        rendered.extend(f"{key}={updates[key]}" for key in sorted(remaining))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(rendered).rstrip() + "\n", encoding="utf-8")
+    path.chmod(0o600)
+
+
+def _record_initial_art_direction(project_slug: str, brief: str) -> str:
+    """Configure the factory's art lane and return the brief wording to retain."""
+
+    try:
+        config = project_supervisor_checkout(Path.cwd()) / ".env"
+    except RuntimeError:
+        # Explicit-output uses outside a Supervisor project still creates a
+        # useful brief; it simply has no local asset lane to configure.
+        return (
+            "- User direction: " + brief if brief else
+            "- No custom direction supplied. Gemma 4 12B should create an original art direction when an asset lane is configured."
+        )
+    if brief:
+        _set_env_values(config, {
+            "ART_PRODUCT_SLUG": project_slug,
+            "ART_DIRECTION_MODE": "user_provided",
+            "ART_DIRECTION_MODEL": "gemma4:12b",
+            "ART_DIRECTION_BRIEF": brief,
+            "ART_STYLE_NAME": "user-directed original product art",
+            "ART_STYLE_PROMPT": f"{brief}, original product asset, clear readable silhouette, no text, no logo",
+        })
+        return f"- User direction: {brief}\n- The project `.env` has been updated to use this direction."
+    _set_env_values(config, {
+        "ART_PRODUCT_SLUG": project_slug,
+        "ART_DIRECTION_MODE": "gemma4_auto",
+        "ART_DIRECTION_MODEL": "gemma4:12b",
+        "ART_DIRECTION_BRIEF": "",
+    })
+    return "- No custom direction supplied. Gemma 4 12B will create an original art direction for asset work.\n- The project `.env` has been configured for Gemma 4 12B automatic art direction."
 
 
 def create_initial_brief(path: Path, *, project_name: str, force: bool = False) -> Path:
@@ -724,6 +787,8 @@ def create_initial_brief(path: Path, *, project_name: str, force: bool = False) 
         sync = "Store user state remotely against the user account so it can be shared across selected devices wherever possible. Provide a local offline cache, safe synchronisation, and conflict recovery where the product supports offline work."
         compliance = "Provide localisation support, privacy consent and user data controls, and platform-appropriate accessibility requirements (including WCAG guidance for web surfaces). Build the appropriate distributable package for every selected platform."
         support = "Support device classes and OS/browser versions that remain widely used for every selected platform. Make slow or offline network conditions usable wherever feasible without compromising required online features."
+    print("\nArt direction is optional. For example: ‘warm hand-painted fantasy, soft sunrise lighting, chunky readable silhouettes, parchment and moss palette’.\nLeave this blank and Gemma 4 12B will create an original art direction for asset work.")
+    art_direction_input = " ".join(_prompt("Optional art direction", "").split())
     values = {
         "project_name": project_name,
         "project_slug": project_slug,
@@ -748,6 +813,7 @@ def create_initial_brief(path: Path, *, project_name: str, force: bool = False) 
             "Reference games, apps, or products that this should be functionally similar to",
             example=FUNCTIONAL_REFERENCE_EXAMPLES[category],
         ),
+        "art_direction": _record_initial_art_direction(project_slug, art_direction_input),
         "open_decisions": "- Infer suitable technical services, including analytics, from the product brief and selected platforms.\n- Infer remaining product decisions from the functional references unless they conflict with an explicit requirement.\n- Record only genuine ambiguities that cannot be resolved safely from the available context.",
     }
     path.parent.mkdir(parents=True, exist_ok=True)
