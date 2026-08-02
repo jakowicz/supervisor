@@ -777,6 +777,12 @@ def _record_initial_art_direction(workspace: Path, project_slug: str, brief: str
     return "- No custom direction supplied. Gemma 4 12B will create an original art direction for asset work.\n- The project `.env` has been configured for Gemma 4 12B automatic art direction."
 
 
+def _requires_initial_art_direction(category: str) -> bool:
+    """Ask only when the initial product category intrinsically needs art assets."""
+
+    return category == "Game"
+
+
 def create_initial_brief(path: Path, *, project_name: str, force: bool = False) -> Path:
     """Interactively collect a complete project brief and write INITIAL.md."""
 
@@ -834,14 +840,23 @@ def create_initial_brief(path: Path, *, project_name: str, force: bool = False) 
         sync = "Store user state remotely against the user account so it can be shared across selected devices wherever possible. Provide a local offline cache, safe synchronisation, and conflict recovery where the product supports offline work."
         compliance = "Provide localisation support, privacy consent and user data controls, and platform-appropriate accessibility requirements (including WCAG guidance for web surfaces). Build the appropriate distributable package for every selected platform."
         support = "Support device classes and OS/browser versions that remain widely used for every selected platform. Make slow or offline network conditions usable wherever feasible without compromising required online features."
-    print("\nOptional art direction:")
-    _print_example("Warm hand-painted fantasy, soft sunrise lighting, chunky readable silhouettes, parchment and moss palette.")
-    print("Leave this blank and Gemma 4 12B will create an original art direction for asset work.")
-    art_direction_input = " ".join(input("> ").split())
+    product = _required("Describe what you are creating", example=PRODUCT_DESCRIPTION_EXAMPLES[category])
+    references = _required(
+        "Reference games, apps, or products that this should be functionally similar to",
+        example=FUNCTIONAL_REFERENCE_EXAMPLES[category],
+    )
+    if _requires_initial_art_direction(category):
+        print("\nOptional art direction:")
+        _print_example("Warm hand-painted fantasy, soft sunrise lighting, chunky readable silhouettes, parchment and moss palette.")
+        print("Leave this blank and Gemma 4 12B will create an original art direction for asset work.")
+        art_direction_input = " ".join(input("> ").split())
+        art_direction = _record_initial_art_direction(path.parent, project_slug, art_direction_input)
+    else:
+        art_direction = "- Not configured initially: this product category does not inherently require generated art assets. Any later asset-required R-series runbook must configure a product-specific art direction before invoking the asset lane."
     values = {
         "project_name": project_name,
         "project_slug": project_slug,
-        "product": _required("Describe what you are creating", example=PRODUCT_DESCRIPTION_EXAMPLES[category]),
+        "product": product,
         "category": category,
         "target_family": target_family,
         "game_characteristics": "\n".join(f"- [x] {item}" for item in game_characteristics) or "- Not specified.",
@@ -858,11 +873,8 @@ def create_initial_brief(path: Path, *, project_name: str, force: bool = False) 
         "sync": sync,
         "compliance": compliance,
         "support": support,
-        "references": _required(
-            "Reference games, apps, or products that this should be functionally similar to",
-            example=FUNCTIONAL_REFERENCE_EXAMPLES[category],
-        ),
-        "art_direction": _record_initial_art_direction(path.parent, project_slug, art_direction_input),
+        "references": references,
+        "art_direction": art_direction,
         "open_decisions": "- Infer suitable technical services, including analytics, from the product brief and selected platforms.\n- Infer remaining product decisions from the functional references unless they conflict with an explicit requirement.\n- Record only genuine ambiguities that cannot be resolved safely from the available context.",
     }
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -1512,6 +1524,8 @@ supervisor-dashboard --serve to view the local dashboard.""",
         except ValueError as error:
             parser.error(str(error))
         print(f"Wrote initial project brief: {brief_path}")
+        print(f"Now configuring the runnable Supervisor project profile: {brief_path.parent / '.env'}")
+        configure(brief_path.parent / ".env")
     if arguments.command == "projects":
         print_projects(arguments.projects_dir.expanduser().resolve(), Path.cwd() / "runbooks")
     if arguments.command == "env-migrate":

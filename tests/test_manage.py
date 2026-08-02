@@ -116,6 +116,12 @@ def test_preparing_workspace_inherits_factory_configuration_without_secrets(monk
     assert "LANGFUSE_SECRET_KEY" not in generated
 
 
+def test_only_games_require_initial_art_direction():
+    assert manage._requires_initial_art_direction("Game")
+    assert not manage._requires_initial_art_direction("Consumer application")
+    assert not manage._requires_initial_art_direction("Service, API, or background system")
+
+
 def test_project_slug_is_safe_for_a_workspace_path():
     assert manage._project_slug("Final Fantasy V: Reborn!") == "final-fantasy-v-reborn"
 
