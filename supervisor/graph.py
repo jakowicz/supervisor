@@ -188,7 +188,7 @@ def create_graph(config: SupervisorConfig):
         }
 
     builder.add_node("prepare", prepare_node)
-    builder.add_node("art_director", worker_node("art_director", "Emberhold art director", "structured local brief", lambda task: art_director.run(task, config.repo_root)))
+    builder.add_node("art_director", worker_node("art_director", "project art director", "structured local brief", lambda task: art_director.run(task, config.repo_root)))
     builder.add_node("asset_generator", worker_node("asset_generator", "ComfyUI Z-Image Turbo", "local ComfyUI", lambda task: asset_generator.run(task, config.repo_root)))
     builder.add_node("asset_finisher", worker_node("asset_finisher", "asset finisher", "deterministic local processing", lambda task: asset_finisher.run(task, config.repo_root)))
     builder.add_node("asset_qa", worker_node("asset_qa", "asset QA reviewer", "local technical and provenance checks", lambda task: asset_qa.run(task, config.repo_root)))

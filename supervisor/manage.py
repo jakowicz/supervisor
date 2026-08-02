@@ -66,6 +66,12 @@ DEFAULTS = {
     "LOCAL_VISION_MODEL": "gemma4:12b",
     "ASSET_VISION_QA_ENABLED": "false",
     "ASSET_VISION_TIMEOUT_SECONDS": "180",
+    "ART_PRODUCT_SLUG": "project",
+    "ART_STYLE_NAME": "original game-art style",
+    "ART_STYLE_PROMPT": "original game asset, clear readable silhouette, premium hand-painted illustration, no text, no logo",
+    "ART_NEGATIVE_PROMPT": "copied commercial game art, trademark, logo, watermark, text, UI screenshot, blurry, duplicate object",
+    "ART_PROTECTED_IP_TERMS": "",
+    "APP_TIME_OBSERVATION_KEY": "flutter.project.time_observation",
 }
 
 DEFAULT_SUPERVISOR_URL = "git@github.com:jakowicz/supervisor.git"

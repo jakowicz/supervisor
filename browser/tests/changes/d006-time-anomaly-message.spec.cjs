@@ -1,6 +1,6 @@
 const { test, expect } = require('@playwright/test');
 
-const observationKey = 'flutter.emberhold.time_observation';
+const observationKey = process.env.APP_TIME_OBSERVATION_KEY || 'flutter.project.time_observation';
 
 async function loadApp(page) {
   const errors = [];

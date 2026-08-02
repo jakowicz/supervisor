@@ -10,7 +10,7 @@ from pathlib import Path
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
-from supervisor.art_assets import asset_ids, asset_root, load_manifest, sha256
+from supervisor.art_assets import asset_ids, asset_root, load_manifest, protected_ip_terms, sha256, style_name, style_prompt
 from supervisor.models import Evidence, NextStep, Status, Task, WorkerResult, model_to_dict
 from worker_adapter import repository_root
 
@@ -28,10 +28,8 @@ def vision_review(path: Path) -> tuple[bool, str]:
     base_url = os.getenv("OLLAMA_BASE_URL", "http://127.0.0.1:11434").rstrip("/")
     model = os.getenv("LOCAL_VISION_MODEL", "gemma4:12b")
     prompt = (
-        "You are the Emberhold local art QA gate. Review this single generated "
-        "mobile-game asset against this original style: lanternlit hearth-fantasy; "
-        "tactile stone, warm timber, aged brass, kiln-charcoal shadows, ember orange "
-        "and moss-teal accents, bold readable playful silhouette. Reject copied or "
+        f"You are the local art QA gate for {style_name()}. Review this single generated "
+        f"game asset against this original style: {style_prompt()}. Reject copied or "
         "recognisably branded game art, visible text/logos/watermarks, extra limbs, "
         "unreadable silhouette, obvious deformation, severe crop or low-quality blur. "
         "Return JSON only: {\"decision\":\"pass\"|\"fail\",\"summary\":string,\"flags\":[string]}."
@@ -74,7 +72,7 @@ def main() -> None:
         try:
             manifest = load_manifest(repo_root, asset_id)
             selected = repo_root / manifest["selected"]["path"]
-            forbidden = ("clash of clans", "supercell")
+            forbidden = protected_ip_terms()
             if not is_png(selected):
                 errors.append(f"{asset_id}: selected production image is missing or not PNG")
             elif manifest["selected"].get("sha256") != sha256(selected):

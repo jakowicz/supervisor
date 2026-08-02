@@ -1,6 +1,6 @@
 const { test, expect } = require('@playwright/test');
 
-test('D001: the asset-free Emberhold bootstrap loads without browser errors', async ({ page }) => {
+test('D001: the asset-free project bootstrap loads without browser errors', async ({ page }) => {
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
   page.on('console', message => {

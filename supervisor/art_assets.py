@@ -9,22 +9,42 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 from pathlib import Path
 
 from .models import Task
 
 
-STYLE_NAME = "Emberhold lanternlit hearth-fantasy"
-STYLE_PROMPT = (
-    "original Emberhold lanternlit hearth-fantasy game art, tactile carved stone, "
-    "weathered warm timber, aged brass, rich kiln-charcoal shadows, ember orange "
-    "and moss-teal accents, jewel-toned focal colour, bold readable silhouette, "
-    "hand-painted illustration, premium mobile strategy game asset, no text, no logo"
-)
-NEGATIVE_PROMPT = (
-    "Clash of Clans, Supercell, copied game art, trademark, logo, watermark, text, "
-    "UI screenshot, blurry, photorealistic, thin unreadable silhouette, duplicate object"
-)
+def art_setting(key: str, default: str = "") -> str:
+    """Read project-owned art direction without hard-coding a product identity."""
+
+    return os.getenv(key, default).strip()
+
+
+def style_name() -> str:
+    return art_setting("ART_STYLE_NAME", "original game-art style")
+
+
+def style_prompt() -> str:
+    return art_setting(
+        "ART_STYLE_PROMPT",
+        "original game asset, clear readable silhouette, premium hand-painted illustration, no text, no logo",
+    )
+
+
+def negative_prompt() -> str:
+    return art_setting(
+        "ART_NEGATIVE_PROMPT",
+        "copied commercial game art, trademark, logo, watermark, text, UI screenshot, blurry, duplicate object",
+    )
+
+
+def product_slug() -> str:
+    return art_setting("ART_PRODUCT_SLUG", "project").lower().replace(" ", "-")
+
+
+def protected_ip_terms() -> tuple[str, ...]:
+    return tuple(term.strip().lower() for term in art_setting("ART_PROTECTED_IP_TERMS").split(",") if term.strip())
 
 
 def asset_root(repo_root: Path, asset_id: str) -> Path:

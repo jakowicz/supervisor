@@ -37,12 +37,12 @@ def test_art_director_records_original_art_provenance(tmp_path):
     manifest = json.loads((tmp_path / "assets/generated/ember_gate_001/manifest.json").read_text(encoding="utf-8"))
     assert result.status is Status.PASS
     assert manifest["provenance"]["original_only"] is True
-    assert "Clash of Clans" not in manifest["prompt"]
+    assert "copied commercial game art" in manifest["negative_prompt"]
     assert manifest["generation"]["model"] == "Z-Image-Turbo"
 
 
 def test_z_image_workflow_records_the_installed_split_model_contract():
-    graph = workflow("original lanternlit gate", 104730, "emberhold/test/gate")
+    graph = workflow("original game gate", 104730, "project/test/gate")
 
     assert graph["1"]["inputs"]["unet_name"] == "z_image_turbo_bf16.safetensors"
     assert graph["2"]["inputs"]["clip_name"] == "qwen_3_4b.safetensors"

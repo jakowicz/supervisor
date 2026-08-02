@@ -40,11 +40,11 @@ def test_runbook_accepts_opt_in_asset_metadata(tmp_path):
     path = tmp_path / "A001.md"
     path.write_text(
         "---\ntask_id: A001\nsequence: 1\ntitle: Gate\nbrowser_impact: not_applicable\nplaywright_spec: \n"
-        "asset_impact: required\nasset_brief: docs/art/briefs/gate.md\nasset_ids: gate,gate_build\nvisual_style_version: emberhold-v1\n---\n"
+        "asset_impact: required\nasset_brief: docs/art/briefs/gate.md\nasset_ids: gate,gate_build\nvisual_style_version: project-v1\n---\n"
         "# A001\n\n## Objective\n\nMake a gate.\n\n## Acceptance criteria\n\n- It is original.\n",
         encoding="utf-8",
     )
     task = load_task(path)
     assert task.asset_impact == "required"
     assert task.asset_ids == ["gate", "gate_build"]
-    assert task.visual_style_version == "emberhold-v1"
+    assert task.visual_style_version == "project-v1"

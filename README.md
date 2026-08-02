@@ -518,7 +518,7 @@ evidence, completion audit and Git publisher.
 asset_impact: required
 asset_brief: docs/art/briefs/my-asset.md
 asset_ids: village_gate_001,village_gate_001_construction
-visual_style_version: emberhold-v1
+visual_style_version: project-v1
 ```
 
 Configure the lane with the three worker commands and a local ComfyUI URL in

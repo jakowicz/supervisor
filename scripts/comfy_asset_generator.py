@@ -1,4 +1,4 @@
-"""Generate local Emberhold art candidates through ComfyUI's HTTP API.
+"""Generate local product art candidates through ComfyUI's HTTP API.
 
 Uses only the already-installed Z-Image Turbo split model and writes every
 workflow, seed, filename and source hash into the product asset manifest.
@@ -16,7 +16,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from supervisor.art_assets import asset_ids, asset_root, load_manifest, save_manifest, sha256
+from supervisor.art_assets import asset_ids, asset_root, load_manifest, product_slug, save_manifest, sha256
 from supervisor.models import Evidence, NextStep, Status, Task, WorkerResult, model_to_dict
 try:  # Direct script execution from `scripts/`.
     from worker_adapter import emit, repository_root
@@ -72,7 +72,7 @@ def main() -> None:
         for ordinal, asset_id in enumerate(asset_ids(task), start=1):
             manifest = load_manifest(repo_root, asset_id)
             seed = int(os.getenv("COMFYUI_ASSET_SEED", "104729")) + ordinal
-            prefix = f"emberhold/{task.task_id.lower()}/{asset_id}"
+            prefix = f"{product_slug()}/{task.task_id.lower()}/{asset_id}"
             graph = workflow(manifest["prompt"], seed, prefix)
             workflow_path = root = asset_root(repo_root, asset_id)
             workflow_path = root / "workflow.json"

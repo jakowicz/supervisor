@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ..art_assets import NEGATIVE_PROMPT, STYLE_NAME, STYLE_PROMPT, asset_ids, asset_root, save_manifest
+from ..art_assets import asset_ids, asset_root, negative_prompt, save_manifest, style_name, style_prompt
 from ..models import Evidence, NextStep, Status, Task, WorkerResult
 
 
@@ -22,14 +22,14 @@ def run(task: Task, repo_root: Path) -> WorkerResult:
     for asset_id in asset_ids(task):
         root = asset_root(repo_root, asset_id)
         root.mkdir(parents=True, exist_ok=True)
-        prompt = ", ".join(part for part in (STYLE_PROMPT, task.title, task.objective.replace("\n", " "), brief_text.replace("\n", " ")) if part)
+        prompt = ", ".join(part for part in (style_prompt(), task.title, task.objective.replace("\n", " "), brief_text.replace("\n", " ")) if part)
         manifest = {
             "asset_id": asset_id,
             "task_id": task.task_id,
-            "visual_style_version": task.visual_style_version or "emberhold-v1",
-            "style_name": STYLE_NAME,
+            "visual_style_version": task.visual_style_version or "project-v1",
+            "style_name": style_name(),
             "prompt": prompt[:6000],
-            "negative_prompt": NEGATIVE_PROMPT,
+            "negative_prompt": negative_prompt(),
             "brief_reference": task.asset_brief,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "provenance": {"original_only": True, "protected_ip_reference_prohibited": True},
@@ -39,7 +39,7 @@ def run(task: Task, repo_root: Path) -> WorkerResult:
         created.append(str((root / "manifest.json").relative_to(repo_root)))
     return WorkerResult(
         status=Status.PASS,
-        summary=f"Created original Emberhold briefs for {len(created)} asset(s).",
+        summary=f"Created original product briefs for {len(created)} asset(s).",
         changed_files=created,
         evidence=Evidence(agent_log="\n".join(created)),
         recommended_next_step=NextStep.COMPLETE,
