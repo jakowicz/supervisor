@@ -86,18 +86,13 @@ def test_choose_many_fallback_accepts_multiple_target_systems(monkeypatch):
     assert selected == ["Android", "Windows", "iPhone"]
 
 
-def test_game_target_family_only_offers_compatible_game_targets(monkeypatch):
-    monkeypatch.setattr(manage, "_choose_one", lambda _label, options: options[2])
+def test_target_selector_infers_a_compatible_game_family(monkeypatch):
+    monkeypatch.setattr(manage, "_choose_many", lambda *_args: ["PlayStation", "Xbox"])
 
-    family, targets = manage._choose_target_family("Game")
+    family, targets = manage._choose_compatible_targets("Game")
 
     assert family == "Console game"
-    assert targets == (
-        "PlayStation",
-        "Xbox",
-        "Nintendo Switch",
-        "PC game storefronts (Steam, Epic Games Store, GOG, itch.io)",
-    )
+    assert targets == ["PlayStation", "Xbox"]
 
 
 def test_game_target_requirement_options_include_rpg_and_console_needs():
@@ -106,6 +101,15 @@ def test_game_target_requirement_options_include_rpg_and_console_needs():
     assert "Controller-first input, system navigation, and player profile handling" in options
     assert "Long-session save, checkpoint, and recovery rules" in options
     assert "Touch controls and orientation rules" not in options
+
+
+def test_multiplayer_games_infer_social_features_and_deferred_content_is_clear():
+    options = manage._game_target_requirement_options("Windows", ["Multiplayer game"])
+
+    assert "Social features, communities, and player-safety requirements" in options
+    assert "Online multiplayer" not in manage.GAME_DEFERRED_CAPABILITIES
+    assert "Additional platforms" not in manage.GAME_DEFERRED_CAPABILITIES
+    assert any("custom levels, mods, designs, or stories" in item for item in manage.GAME_DEFERRED_CAPABILITIES)
 
 
 def test_game_target_requirements_are_derived_without_an_extra_prompt():
@@ -122,6 +126,58 @@ def test_selected_bullets_combines_presets_and_optional_detail(monkeypatch):
     selected = manage._selected_bullets("Requirements", ("Accessible controls",), other_example="Example")
 
     assert selected == "- Accessible controls\n- Other: Custom requirement"
+
+
+def test_selected_bullets_can_skip_the_optional_free_text_prompt(monkeypatch):
+    monkeypatch.setattr(manage, "_choose_many", lambda *_args: ["Casual players"])
+    monkeypatch.setattr("builtins.input", lambda _prompt: (_ for _ in ()).throw(AssertionError("Unexpected prompt")))
+
+    assert manage._selected_bullets("Player experience", ("Casual players",)) == "- Casual players"
+
+
+def test_game_first_release_capabilities_are_baseline_requirements():
+    capabilities = "\n".join(f"- {capability}" for capability in manage.GAME_FIRST_RELEASE_CAPABILITIES)
+
+    assert "- Playable core loop" in capabilities
+    assert "- Player account and identity" in capabilities
+    assert "- Multiplayer services and player safety" in capabilities
+    assert "- Live-service operations" in capabilities
+    assert "- In-app purchases and entitlement handling" in capabilities
+    assert "- Crash/error recovery" in capabilities
+
+
+def test_game_cross_platform_delivery_defaults_to_shared_parallel_feature_parity():
+    parity = "Build every selected platform in tandem from one shared core, with feature parity by default and platform-specific input or UI adaptations only where necessary."
+
+    assert "in tandem" in parity
+    assert "shared core" in parity
+    assert "feature parity" in parity
+    assert "Platform-specific companion experiences" not in manage.PLATFORM_STRATEGIES
+
+
+def test_game_sync_defaults_to_remote_reusable_cross_device_state():
+    sync = "Store player state remotely against the player account so it can be shared across selected devices wherever possible. Provide a local offline cache, safe synchronisation, and conflict recovery. Design the save-state service as a reusable platform capability rather than a game-specific silo."
+
+    assert "remotely" in sync
+    assert "across selected devices" in sync
+    assert "reusable platform capability" in sync
+
+
+def test_game_compliance_defaults_cover_baseline_and_platform_packages():
+    compliance = "Provide localisation support, privacy consent and player data controls, and age-rating or parental-control requirements. Apply platform-appropriate accessibility requirements (including WCAG guidance for web surfaces). Build the appropriate distributable package for every selected platform."
+
+    assert "localisation support" in compliance
+    assert "privacy consent" in compliance
+    assert "age-rating" in compliance
+    assert "WCAG guidance for web surfaces" in compliance
+    assert "distributable package for every selected platform" in compliance
+
+
+def test_game_support_defaults_to_widely_used_devices_and_feasible_slow_network_use():
+    support = "Support device classes and OS/browser versions that remain widely used for every selected platform. Make slow or offline network conditions usable wherever feasible without compromising the core game design or required online features."
+
+    assert "widely used" in support
+    assert "wherever feasible" in support
 
 
 def test_initialise_project_scaffolds_a_safe_empty_project(monkeypatch, tmp_path: Path):

@@ -202,15 +202,15 @@ GAME_GENRES = (
     "Puzzle, card, board, or turn-based game",
     "Narrative or visual-novel game",
 )
-GAME_AUDIENCES = ("Casual players", "Core/hobby players", "Children and families", "Teen players", "Adult players", "Accessibility-first players")
+GAME_PLAYER_EXPERIENCE = ("Casual players", "Core/hobby players")
+GAME_AUDIENCE_GROUPS = ("Children and families", "Teen players", "Adult players", "Accessibility-first players")
 GAME_PRIMARY_OUTCOMES = ("Play a satisfying core game loop", "Progress through a story or campaign", "Compete with other players", "Create, collect, or customise", "Relax with short repeatable sessions")
 GAME_FIRST_SESSION_SUCCESSES = ("Complete onboarding and play the core loop", "Finish a first level, battle, puzzle, or quest", "Create a character or save file", "Understand controls and choose accessibility settings")
-GAME_FIRST_RELEASE_CAPABILITIES = ("Playable core loop", "Onboarding and tutorial", "Save/load and progression", "Settings and accessibility", "Audio and visual feedback", "Content/level delivery", "Crash/error recovery")
-GAME_DEFERRED_CAPABILITIES = ("Online multiplayer", "Social features and communities", "Live events or seasonal content", "User-generated content", "Advanced analytics or monetisation", "Additional platforms")
+GAME_FIRST_RELEASE_CAPABILITIES = ("Playable core loop", "Onboarding and tutorial", "Save/load and progression", "Settings and accessibility", "Audio and visual feedback", "Content/level delivery", "Player account and identity", "Multiplayer services and player safety", "Live-service operations", "In-app purchases and entitlement handling", "Crash/error recovery")
+GAME_DEFERRED_CAPABILITIES = ("Live events or seasonal content", "Player-created and shared content (custom levels, mods, designs, or stories)", "Advanced analytics or monetisation")
 COMMON_CONSTRAINTS = ("Accessibility support", "Privacy and data-minimisation", "Offline or unreliable-network support", "Performance and download-size budget", "Limited budget or delivery date", "Existing repository or technology constraint", "Third-party service integration")
 TECHNOLOGY_CONSTRAINTS = ("Use an existing repository", "Use a specified framework or engine", "No paid infrastructure or services", "Must integrate with an existing API or backend", "No fixed technology constraint")
-GAME_NON_GOALS = ("No copied branding, assets, text, layouts, or distinctive interactions", "No multiplayer in the first release", "No in-app purchases in the first release", "No account system in the first release", "No live-service operations in the first release")
-PLATFORM_STRATEGIES = ("Shared core with platform-specific input and UI", "One primary platform first; other selected platforms follow", "Feature parity across selected platforms", "Platform-specific companion experiences")
+PLATFORM_STRATEGIES = ("Shared core with platform-specific input and UI", "One primary platform first; other selected platforms follow", "Feature parity across selected platforms")
 SYNC_POLICIES = ("Local save only", "Cloud sync when signed in", "Offline-first with conflict resolution", "Online-only shared state")
 COMMON_COMPLIANCE = ("WCAG-style accessibility", "Localisation support", "Privacy consent and data controls", "Age rating or parental controls", "Store certification and submission requirements")
 SUPPORT_TARGETS = ("Latest supported OS/browser versions", "Current and previous major OS/browser versions", "Phone, tablet, desktop, and low-end device coverage", "Slow or offline network conditions")
@@ -274,6 +274,7 @@ def _project_type_prompt(default: str = "documents") -> str:
 
 
 def _required(label: str, *, example: str | None = None) -> str:
+    print()
     if example:
         print(f"Example: {example}")
     while not (value := input(f"{label}: ").strip()):
@@ -282,6 +283,7 @@ def _required(label: str, *, example: str | None = None) -> str:
 
 
 def _multiline(label: str, *, example: str | None = None) -> str:
+    print()
     if example:
         print(f"Examples: {example}")
     print(f"{label} (enter one item per line; enter a single '.' when finished):")
@@ -292,12 +294,15 @@ def _multiline(label: str, *, example: str | None = None) -> str:
     return "\n".join(f"- {line}" for line in lines) or "- None recorded."
 
 
-def _selected_bullets(label: str, options: tuple[str, ...], *, other_example: str) -> str:
+def _selected_bullets(label: str, options: tuple[str, ...], *, other_example: str | None = None) -> str:
     """Choose common answers first, then allow a concise product-specific note."""
 
     selected = _choose_many(label, options)
-    print(f"Optional other detail. Example: {other_example}")
-    other = input("Other detail (press Enter to skip): ").strip()
+    other = ""
+    if other_example:
+        print()
+        print(f"Optional other detail. Example: {other_example}")
+        other = input("Other detail (press Enter to skip): ").strip()
     lines = [f"- {item}" for item in selected]
     if other:
         lines.append(f"- Other: {other}")
@@ -405,14 +410,20 @@ def _choose_many(label: str, options: tuple[str, ...]) -> list[str]:
         sys.stdout.flush()
 
 
-def _choose_target_family(category: str) -> tuple[str, tuple[str, ...]]:
+def _choose_compatible_targets(category: str) -> tuple[str, list[str]]:
+    """Select actual targets once, rejecting combinations needing separate collections."""
+
     families = GAME_TARGET_FAMILIES if category == "Game" else APPLICATION_TARGET_FAMILIES
-    labels = tuple(name for name, _targets in families)
-    selected_name = _choose_one(
-        "Choose one compatible delivery profile (targets from different profiles need separate runbook collections)",
-        labels,
-    )
-    return next(family for family in families if family[0] == selected_name)
+    options = tuple(dict.fromkeys(target for _name, targets in families for target in targets))
+    while True:
+        selected = _choose_many("Select every additional target you want to support", options)
+        matching_families = [name for name, targets in families if set(selected).issubset(set(targets))]
+        if matching_families:
+            return matching_families[0], selected
+        print(
+            "That target combination needs separate runbook collections (for example, a console game and a TV app). "
+            "Select targets from one compatible delivery family."
+        )
 
 
 def _game_target_requirement_options(target: str, characteristics: list[str]) -> tuple[str, ...]:
@@ -443,7 +454,7 @@ def _game_target_requirement_options(target: str, characteristics: list[str]) ->
     if "Real-time action, platformer, or combat game" in characteristics:
         options.extend(("Stable frame-time and input-latency target", "Control remapping and difficulty/accessibility assists"))
     if "Multiplayer game" in characteristics or "Single-player and multiplayer game" in characteristics:
-        options.extend(("Online identity, matchmaking, moderation, and reporting requirements", "Network-loss, reconnection, and multiplayer state-recovery behaviour"))
+        options.extend(("Online identity, matchmaking, moderation, and reporting requirements", "Social features, communities, and player-safety requirements", "Network-loss, reconnection, and multiplayer state-recovery behaviour"))
     return tuple(dict.fromkeys(options))
 
 
@@ -522,7 +533,7 @@ Additional selected targets:
 - Accessibility, localisation, privacy, parental-control, store, or certification requirements: {values['compliance']}
 - Minimum supported OS, browser, device class, and network condition: {values['support']}
 
-## Reference boundaries
+## Functional references
 
 {values['references']}
 
@@ -547,8 +558,7 @@ def create_initial_brief(path: Path, *, project_name: str, force: bool = False) 
         raise ValueError(f"Initial brief already exists: {path}. Use --force to replace it.")
     project_slug = _project_slug(project_name)
     category = _choose_one("What type of product are you building", PRODUCT_CATEGORIES)
-    target_family, compatible_targets = _choose_target_family(category)
-    additional_targets = _choose_many("Select every target in this compatible profile that you want to support", compatible_targets)
+    target_family, additional_targets = _choose_compatible_targets(category)
     targets = [*DEFAULT_WEB_TARGETS, *additional_targets]
     game_characteristics = (
         [
@@ -568,18 +578,20 @@ def create_initial_brief(path: Path, *, project_name: str, force: bool = False) 
         }
     )
     if category == "Game":
-        users = _selected_bullets("Select the players this game is for", GAME_AUDIENCES, other_example="Players who enjoy 20-minute tactical sessions.")
+        player_experience = _selected_bullets("Select the intended player experience", GAME_PLAYER_EXPERIENCE)
+        audience_groups = _selected_bullets("Select the intended audience groups", GAME_AUDIENCE_GROUPS)
+        users = "\n".join((player_experience, audience_groups))
         primary_outcome = _choose_one_with_example("Select the primary player outcome", GAME_PRIMARY_OUTCOMES, example="Progress through a story or campaign.")
         first_session = _choose_one_with_example("Select a successful first session", GAME_FIRST_SESSION_SUCCESSES, example="Finish a first battle and understand how saving works.")
-        capabilities = _selected_bullets("Select first-release game capabilities", GAME_FIRST_RELEASE_CAPABILITIES, other_example="Turn-based combat with a small party.")
+        capabilities = "\n".join(f"- {capability}" for capability in GAME_FIRST_RELEASE_CAPABILITIES)
         deferred = _selected_bullets("Select deferred game capabilities", GAME_DEFERRED_CAPABILITIES, other_example="New-game-plus mode.")
-        technology = _selected_bullets("Select technology or delivery constraints", TECHNOLOGY_CONSTRAINTS, other_example="Build with Flutter and Flame in the existing repository.")
-        constraints = _selected_bullets("Select product constraints that apply", COMMON_CONSTRAINTS, other_example="Must work without an account during the first release.")
-        non_goals = _selected_bullets("Select explicit first-release non-goals", GAME_NON_GOALS, other_example="No procedurally generated levels.")
-        parity = _choose_one_with_example("Select the cross-platform delivery strategy", PLATFORM_STRATEGIES, example="Shared core with platform-specific input and UI.")
-        sync = _choose_one_with_example("Select the save and synchronisation policy", SYNC_POLICIES, example="Local save only.")
-        compliance = _selected_bullets("Select compliance and release requirements", COMMON_COMPLIANCE, other_example="PEGI age-rating submission.")
-        support = _selected_bullets("Select supported device and network conditions", SUPPORT_TARGETS, other_example="60 FPS target on iPhone 13 and newer.")
+        technology = "To be determined by the factory from the game format, selected platforms, and project brief."
+        constraints = "To be determined by the factory from the game format, selected platforms, and project brief."
+        non_goals = "No copied branding, assets, text, layouts, or distinctive interactions."
+        parity = "Build every selected platform in tandem from one shared core, with feature parity by default and platform-specific input or UI adaptations only where necessary."
+        sync = "Store player state remotely against the player account so it can be shared across selected devices wherever possible. Provide a local offline cache, safe synchronisation, and conflict recovery. Design the save-state service as a reusable platform capability rather than a game-specific silo."
+        compliance = "Provide localisation support, privacy consent and player data controls, and age-rating or parental-control requirements. Apply platform-appropriate accessibility requirements (including WCAG guidance for web surfaces). Build the appropriate distributable package for every selected platform."
+        support = "Support device classes and OS/browser versions that remain widely used for every selected platform. Make slow or offline network conditions usable wherever feasible without compromising the core game design or required online features."
     else:
         users = _required("Who is it for", example="Independent workers who need to plan a personal backlog.")
         primary_outcome = _required("What is their primary outcome", example="Capture, organise, and complete important work.")
@@ -612,8 +624,11 @@ def create_initial_brief(path: Path, *, project_name: str, force: bool = False) 
         "sync": sync,
         "compliance": compliance,
         "support": support,
-        "references": _required("Functional references and their no-copy boundaries", example="Use Todoist for feature inspiration only; do not copy its brand, copy, visuals, or interaction details."),
-        "open_decisions": _multiline("Open decisions requiring approval", example="Choose analytics provider; decide whether guest accounts are allowed."),
+        "references": _required(
+            "Reference games, apps, or products that this should be functionally similar to",
+            example="Final Fantasy V for turn-based party combat and world progression." if category == "Game" else "Todoist for task capture, projects, priorities, and recurring work.",
+        ),
+        "open_decisions": "- Infer suitable technical services, including analytics, from the product brief and selected platforms.\n- Infer remaining product decisions from the functional references unless they conflict with an explicit requirement.\n- Record only genuine ambiguities that cannot be resolved safely from the available context.",
     }
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(_render_initial_brief(values, targets, target_details), encoding="utf-8")
