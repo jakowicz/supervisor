@@ -12,6 +12,7 @@ observability/.env
 # Local runtimes and test by-products
 .venv/
 .pytest_cache/
+.codebase-memory/
 __pycache__/
 *.py[cod]
 *.egg-info/
