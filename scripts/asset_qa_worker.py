@@ -77,6 +77,8 @@ def main() -> None:
                 errors.append(f"{asset_id}: selected production image is missing or not PNG")
             elif manifest["selected"].get("sha256") != sha256(selected):
                 errors.append(f"{asset_id}: selected image hash does not match manifest")
+            elif not manifest.get("style_name") or not manifest.get("prompt") or not manifest.get("visual_style_version"):
+                errors.append(f"{asset_id}: manifest is missing the approved art direction, prompt, or style version")
             elif any(term in manifest.get("prompt", "").lower() for term in forbidden):
                 errors.append(f"{asset_id}: prohibited protected-IP reference in generation prompt")
             elif not manifest.get("provenance", {}).get("original_only"):

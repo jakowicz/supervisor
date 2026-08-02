@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -26,6 +27,10 @@ def main() -> None:
                 errors.append(f"{audio_id}: production audio is missing or empty")
             elif manifest["selected"].get("sha256") != sha256(selected):
                 errors.append(f"{audio_id}: production audio hash does not match manifest")
+            elif not manifest.get("style_name") or not manifest.get("prompt") or not manifest.get("audio_style_version"):
+                errors.append(f"{audio_id}: manifest is missing the approved audio direction, prompt, or style version")
+            elif manifest.get("generation", {}).get("model") != os.getenv("ACE_STEP_MODEL", "acestep-v15-xl-turbo"):
+                errors.append(f"{audio_id}: generated model does not match the project ACE_STEP_MODEL")
             elif not manifest.get("provenance", {}).get("original_only"):
                 errors.append(f"{audio_id}: original-audio provenance is not recorded")
             else:

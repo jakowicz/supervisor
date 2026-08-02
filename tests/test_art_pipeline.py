@@ -42,6 +42,26 @@ def test_art_director_records_original_art_provenance(tmp_path):
     assert "Requested source asset: ember gate 001" in manifest["prompt"]
 
 
+def test_art_director_binds_the_project_direction_to_every_asset_manifest(monkeypatch, tmp_path):
+    monkeypatch.setenv("ART_DIRECTION_MODE", "user_provided")
+    monkeypatch.setenv("ART_STYLE_NAME", "warm painted folklore")
+    monkeypatch.setenv("ART_STYLE_PROMPT", "warm watercolor, moss green and amber, clear readable silhouettes")
+    monkeypatch.setenv("ART_NEGATIVE_PROMPT", "copied art, trademark, logo")
+    brief = tmp_path / "brief.md"
+    brief.write_text("A welcoming starting village gate.", encoding="utf-8")
+    task = art_task().model_copy(update={"asset_brief": "brief.md", "visual_style_version": "ember-art-v1"})
+
+    created = create_art_brief(task, tmp_path)
+    manifest = json.loads((tmp_path / "assets/generated/ember_gate_001/manifest.json").read_text(encoding="utf-8"))
+
+    assert created.status is Status.PASS
+    assert manifest["style_name"] == "warm painted folklore"
+    assert "warm watercolor, moss green and amber" in manifest["prompt"]
+    assert "A welcoming starting village gate" in manifest["prompt"]
+    assert manifest["visual_style_version"] == "ember-art-v1"
+    assert manifest["negative_prompt"] == "copied art, trademark, logo"
+
+
 def test_z_image_workflow_records_the_installed_split_model_contract():
     graph = workflow("original game gate", 104730, "project/test/gate")
 

@@ -89,6 +89,34 @@ def test_blank_initial_art_direction_configures_gemma4(monkeypatch, tmp_path: Pa
     assert "Gemma 4 12B will create" in recorded
 
 
+def test_blank_initial_audio_direction_configures_local_ace_step_for_factory_projects(tmp_path: Path):
+    workspace = tmp_path / "projects" / "moonlit"
+
+    recorded = manage._record_initial_audio_direction(workspace, "")
+    updated = (workspace / ".env").read_text(encoding="utf-8")
+
+    assert "AUDIO_DIRECTION_MODE=gemma4_auto" in updated
+    assert "AUDIO_DIRECTION_MODEL=gemma4:12b" in updated
+    # The shared ACE-Step endpoint/model defaults are applied by the versioned
+    # environment migration; this helper only records project-specific intent.
+    assert "ACE_STEP_MODEL=" not in updated
+    assert "AUDIO_GENERATOR_COMMAND=./supervisor/.venv/bin/python supervisor/scripts/ace_audio_generator.py {task_file}" in updated
+    assert "ACE-Step 1.5 XL Turbo" in recorded
+
+
+def test_user_audio_direction_is_stored_without_touching_secrets(tmp_path: Path):
+    workspace = tmp_path / "projects" / "moonlit"
+    workspace.mkdir(parents=True)
+    (workspace / ".secrets.env").write_text("LANGFUSE_SECRET_KEY=private\n", encoding="utf-8")
+
+    manage._record_initial_audio_direction(workspace, "soft harp and strings for exploration; percussion for battle")
+
+    updated = (workspace / ".env").read_text(encoding="utf-8")
+    assert "AUDIO_DIRECTION_MODE=user_provided" in updated
+    assert "AUDIO_DIRECTION_BRIEF=soft harp and strings for exploration; percussion for battle" in updated
+    assert "LANGFUSE_SECRET_KEY=private" in (workspace / ".secrets.env").read_text(encoding="utf-8")
+
+
 def test_preparing_named_project_workspace_owns_env_and_state(tmp_path: Path):
     workspace = tmp_path / "projects" / "moonlit"
 
@@ -524,6 +552,8 @@ def test_migrate_env_adds_missing_keys_preserves_values_and_uses_committed_manif
     assert "CODEX_MODEL=project-choice" in migrated
     assert f"SUPERVISOR_ENV_SCHEMA_VERSION={manage.ENV_SCHEMA_VERSION}" in migrated
     assert "SUPERVISOR_QWEN_IDLE_TIMEOUT_SECONDS=600" in migrated
+    assert "ACE_STEP_MODEL=acestep-v15-xl-turbo" in migrated
+    assert "AUDIO_GENERATOR_COMMAND=./.venv/bin/python scripts/ace_audio_generator.py {task_file}" in migrated
     assert any("added SUPERVISOR_QWEN_IDLE_TIMEOUT_SECONDS" in change for change in changes)
     assert manage.ENV_MIGRATION_MANIFEST_PATH.is_file()
     assert not (tmp_path / ".state" / "supervisor-env-migrations.log").exists()
