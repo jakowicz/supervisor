@@ -207,7 +207,7 @@ given for that task explicitly.""",
                         raise RuntimeError("The collection stopped with a task requiring attention.")
                     _run_registered_collections(runbooks_directory, arguments.dry_run, arguments.continue_on_nonpass, project_workspace or project_root, repo_root)
                     break
-                except Exception as error:
+                except (Exception, SystemExit) as error:
                     if not project_workspace or os.getenv("SUPERVISOR_PROJECT_REPAIR_ACTIVE") == "1" or completed_repairs >= max_repairs:
                         raise
                     evidence = "".join(traceback.format_exception(error))
@@ -644,15 +644,25 @@ def _initial_document(directory: Path, explicit_path: Path | None = None) -> str
     raise ValueError(f"--run-all requires {expected}.")
 
 
-def _repair_project_collection_failure(workspace: Path, repo_root: Path, attempt: int, evidence: str) -> None:
-    """Give any project-collection failure to Codex, then let the caller retry."""
+def _repair_project_collection_failure(workspace: Path, repo_root: Path, attempt: int, evidence: str) -> int:
+    """Give a collection failure to Codex and return its process exit code.
+
+    The caller owns the retry decision.  A repair worker can be terminated
+    after persisting a valid change (for example by a runner timeout), so its
+    exit code is evidence for the next pass—not a reason to skip the resumed
+    collection run.
+    """
 
     repair_id = f"AR{attempt:04d}-{uuid.uuid4().hex[:8]}"
+    print("", file=sys.stderr, flush=True)
+    print("PROJECT FAILURE CAUGHT · the project run stopped before completion.", file=sys.stderr, flush=True)
     print(
-        f"PROJECT REPAIR {attempt} · collection failure captured; sending it to Codex before retrying.",
+        f"PROJECT RECOVERY STARTING · repair attempt {attempt} is being sent to "
+        f"{os.getenv('SUPERVISOR_RECOVERY_CODING_AGENTS', 'codex')}.",
         file=sys.stderr,
         flush=True,
     )
+    print("PROJECT RECOVERY NEXT · after repair, Supervisor will restart in a fresh process and resume from SQLite state.", file=sys.stderr, flush=True)
     environment = os.environ.copy()
     environment["SUPERVISOR_PROJECT_REPAIR_ACTIVE"] = "1"
     environment["SUPERVISOR_AUTO_COMMIT"] = "false"
@@ -674,14 +684,24 @@ def _repair_project_collection_failure(workspace: Path, repo_root: Path, attempt
             "The Supervisor project collection failed or stopped. Work in the project and generator "
             "repository using the terminal. Inspect the captured traceback and durable state; fix the root "
             "cause rather than weakening validations; then run a focused check. The parent collection will "
-            "retry automatically after you pass. Captured failure follows:\n\n" + evidence[-12000:]
+            "retry automatically after you pass. Unfinished generated runbooks, manifests, bibles, design "
+            "evidence, editorial records, dependencies, dispatchers, and product content are in-scope repair "
+            "work: create or correct them and do not request user review merely because they are incomplete. "
+            "User review is reserved for genuinely missing authority, credentials, destructive action, or an "
+            "external system that cannot be replaced with bounded project work. Captured failure follows:\n\n" + evidence[-12000:]
         ),
         "--acceptance", "The captured collection failure has a concrete root-cause fix.",
         "--acceptance", "A focused terminal validation for the repair passes.",
     ]
     completed = subprocess.run(command, cwd=repo_root, env=environment, check=False)
     if completed.returncode:
-        raise RuntimeError(f"Codex project-repair task {repair_id} exited {completed.returncode}.")
+        print(
+            f"PROJECT REPAIR {attempt} · Codex exited {completed.returncode}; "
+            "restarting the collection to validate any persisted repair.",
+            file=sys.stderr,
+            flush=True,
+        )
+    return completed.returncode
 
 
 def _project_workspace(value: str) -> Path:
@@ -736,6 +756,9 @@ def _authoring_output_errors(runbook: Path) -> list[str]:
         return [f"declares {len(expected_ids)} {series} outputs; limit is 5"]
     errors: list[str] = []
     for task_id in expected_ids:
+        if is_game_design_dispatcher and task_id == runbook.stem:
+            errors.append(f"declares itself as its game-design continuation: {task_id}.md")
+            continue
         output = (runbook.parent / f"{task_id}.md") if (is_game_design_author or is_game_design_dispatcher) else (runbook.parent.parent / "runbooks" / f"{task_id}.md")
         if not output.is_file():
             errors.append(f"missing {task_id}.md")
@@ -756,7 +779,7 @@ def _authoring_output_errors(runbook: Path) -> list[str]:
 
 
 def _reopen_invalid_authoring_tasks(runbooks: list[Path], states: dict[str, dict | None], database_path: Path) -> list[str]:
-    """Reopen accepted B tasks whose promised R contracts are not loadable."""
+    """Reopen accepted authoring tasks whose promised downstream work is invalid."""
 
     reopened: list[str] = []
     store = RunStore(database_path)
@@ -954,7 +977,7 @@ def _run_collection_until_complete(
         if reopened:
             print(
                 "COLLECTION REOPENED · " + ", ".join(reopened) +
-                " has invalid generated R-series contracts and will be repaired before continuing.",
+                " has invalid generated downstream contracts and will be repaired before continuing.",
                 file=sys.stderr,
                 flush=True,
             )

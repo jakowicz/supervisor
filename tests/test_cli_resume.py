@@ -275,6 +275,20 @@ def test_accepted_game_design_dispatcher_is_reopened_when_its_continuation_is_mi
     assert _reopen_invalid_authoring_tasks([dispatcher], {"GD0002": {"status": "accepted"}}, database) == ["GD0002"]
 
 
+def test_game_design_dispatcher_cannot_complete_by_declaring_itself(tmp_path: Path):
+    collection = tmp_path / "game-design-runbooks"
+    collection.mkdir()
+    dispatcher = collection / "GD0003.md"
+    dispatcher.write_text(
+        "---\ntask_id: GD0003\nsequence: 1\ntitle: Continue design\nbrowser_impact: not_applicable\nplaywright_spec:\n---\n\n## Objective\n\nContinue.\n\n## Output list\n\n- `GD0003.md`\n\n## Acceptance criteria\n\n- Done.\n",
+        encoding="utf-8",
+    )
+
+    assert _authoring_output_errors(dispatcher) == [
+        "declares itself as its game-design continuation: GD0003.md"
+    ]
+
+
 def test_game_design_completion_gate_requires_accepted_final_audit(tmp_path: Path):
     workspace = tmp_path / "project"
     planning = workspace / "planning"
@@ -457,12 +471,48 @@ def test_project_watchdog_uses_dedicated_recovery_agents(monkeypatch, tmp_path: 
     monkeypatch.setattr(cli.subprocess, "run", run)
     monkeypatch.setenv("SUPERVISOR_RECOVERY_CODING_AGENTS", "codex")
 
-    _repair_project_collection_failure(tmp_path / "project", tmp_path, 1, "ValueError: broken collection")
+    assert _repair_project_collection_failure(tmp_path / "project", tmp_path, 1, "ValueError: broken collection") == 0
 
     assert captured["env"]["SUPERVISOR_PROJECT_REPAIR_ACTIVE"] == "1"
     assert captured["env"]["SUPERVISOR_CODING_AGENTS"] == "codex"
     assert "--project" in captured["command"]
     assert any("ValueError: broken collection" in value for value in captured["command"])
+
+
+def test_project_watchdog_restarts_after_runner_exit_and_nonzero_repair(monkeypatch, tmp_path: Path):
+    workspace = tmp_path / "projects" / "task-app"
+    workspace.mkdir(parents=True)
+    (workspace / "INITIAL.md").write_text("# Brief\n", encoding="utf-8")
+    factory = tmp_path / "runbooks"
+    factory.mkdir()
+    (factory / "F001.md").write_text(
+        "---\ntask_id: F001\nsequence: 1\ntitle: Factory\nbrowser_impact: not_applicable\nplaywright_spec:\n---\n\n## Objective\n\nDo it.\n\n## Acceptance criteria\n\n- Done.\n",
+        encoding="utf-8",
+    )
+    repair_calls = []
+    restarted = []
+
+    def repair(*args):
+        repair_calls.append(args)
+        return -15
+
+    def restart(*args):
+        restarted.append(args)
+        raise RuntimeError("restart requested")
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(sys, "argv", ["supervisor-run", "--project", "task-app"])
+    monkeypatch.setattr(cli, "_run_collection_until_complete", lambda *_args: (_ for _ in ()).throw(SystemExit("runner crashed")))
+    monkeypatch.setattr(cli, "_repair_project_collection_failure", repair)
+    monkeypatch.setattr(cli.os, "execv", restart)
+
+    with pytest.raises(RuntimeError, match="restart requested"):
+        cli.main()
+
+    assert len(repair_calls) == 1
+    assert "SystemExit: runner crashed" in repair_calls[0][3]
+    assert cli.os.environ["SUPERVISOR_PROJECT_REPAIR_COUNT"] == "1"
+    assert restarted
 
 
 def test_registered_collections_follow_explicit_children_recursively(tmp_path: Path, monkeypatch):

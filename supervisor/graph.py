@@ -70,7 +70,8 @@ def _repair_handoff(stage: str, result: WorkerResult) -> str:
 def _preserve_repair_loop(result: WorkerResult, repairing_terminal_failure: bool) -> WorkerResult:
     """Do not let an agent bypass retries for an already-proven QA failure."""
 
-    if not repairing_terminal_failure or result.status is not Status.NEEDS_USER_REVIEW:
+    project_recovery = os.getenv("SUPERVISOR_PROJECT_REPAIR_ACTIVE") == "1"
+    if not (repairing_terminal_failure or project_recovery) or result.status is not Status.NEEDS_USER_REVIEW:
         return result
     return result.model_copy(update={
         "status": Status.REPAIRABLE_FAILURE,

@@ -7,6 +7,12 @@ path, enabled agents, execution order, worker commands, validation commands,
 timeouts, publishing policy, observability, and platform-specific tooling.
 Supervisor provides evidence-gated orchestration around that project contract.
 
+For generated game-design collections, a `GD` dispatcher must point to an
+actual successor task; it cannot satisfy its continuation contract by naming
+itself. Supervisor reopens an accepted dispatcher with that invalid output so
+the remaining bounded design work is repaired before downstream factory tasks
+can proceed.
+
 ## Quick start
 
 ### Install the Supervisor CLI

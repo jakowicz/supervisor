@@ -51,3 +51,17 @@ def test_review_response_without_a_failed_terminal_stage_remains_a_user_decision
     )
 
     assert _preserve_repair_loop(result, repairing_terminal_failure=False) is result
+
+
+def test_project_recovery_cannot_escape_to_user_review(monkeypatch):
+    monkeypatch.setenv("SUPERVISOR_PROJECT_REPAIR_ACTIVE", "1")
+    result = WorkerResult(
+        status=Status.NEEDS_USER_REVIEW,
+        summary="Generated editorial evidence is incomplete.",
+        recommended_next_step=NextStep.ASK_USER,
+    )
+
+    repaired = _preserve_repair_loop(result, repairing_terminal_failure=False)
+
+    assert repaired.status is Status.REPAIRABLE_FAILURE
+    assert repaired.recommended_next_step is NextStep.RETRY_QWEN
