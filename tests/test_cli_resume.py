@@ -5,7 +5,7 @@ import pytest
 from pathlib import Path
 
 from supervisor import cli
-from supervisor.cli import START_STAGES, _authoring_output_errors, _can_recover_qwen, _collection_runbooks, _completion_banner, _expand_task_range, _initial_document, _project_database_for_runbook, _project_workspace, _qwen_session_to_resume, _recovered_qwen_event, _reopen_invalid_authoring_tasks, _resume_stage, _retry_stage, _run_collection_until_complete, _run_registered_collections, _run_summary, _should_skip_accepted_task, _unmet_dependencies
+from supervisor.cli import START_STAGES, _authoring_output_errors, _can_recover_qwen, _collection_runbooks, _completion_banner, _expand_task_range, _initial_document, _project_database_for_runbook, _project_workspace, _qwen_session_to_resume, _recovered_qwen_event, _reopen_invalid_authoring_tasks, _repair_project_collection_failure, _resume_stage, _retry_stage, _run_collection_until_complete, _run_registered_collections, _run_summary, _should_skip_accepted_task, _unmet_dependencies
 from supervisor.failure_summary import _deterministic_summary, summarize_failure
 from supervisor.models import NextStep, RunEvent, Status, Task, TaskRun, WorkerResult
 from supervisor.storage import RunStore
@@ -257,6 +257,24 @@ def test_gb_writer_output_must_be_owned_by_its_design_batch(tmp_path: Path):
     assert _authoring_output_errors(writer) == ["declares 6 G-series design outputs; limit is 5"]
 
 
+def test_accepted_game_design_dispatcher_is_reopened_when_its_continuation_is_missing(tmp_path: Path):
+    collection = tmp_path / "game-design-runbooks"
+    collection.mkdir()
+    dispatcher = collection / "GD0002.md"
+    dispatcher.write_text(
+        "---\ntask_id: GD0002\nsequence: 1\ntitle: Continue design\nbrowser_impact: not_applicable\nplaywright_spec:\n---\n\n## Objective\n\nContinue.\n\n## Output list\n\n- `GD0003.md`\n\n## Acceptance criteria\n\n- Done.\n",
+        encoding="utf-8",
+    )
+    database = tmp_path / ".state" / "game-design-runbooks.sqlite3"
+    store = RunStore(database)
+    store.claim_task("GD0002", "run-1", 0)
+    store.finish_task(TaskRun(task=Task(task_id="GD0002", title="Continue design"), run_id="run-1", status=Status.PASS, route="accepted", worker_results=[]))
+    store.close()
+
+    assert _authoring_output_errors(dispatcher) == ["missing GD0003.md"]
+    assert _reopen_invalid_authoring_tasks([dispatcher], {"GD0002": {"status": "accepted"}}, database) == ["GD0002"]
+
+
 def test_game_design_completion_gate_requires_accepted_final_audit(tmp_path: Path):
     workspace = tmp_path / "project"
     planning = workspace / "planning"
@@ -424,6 +442,27 @@ def test_targeted_project_child_retry_uses_its_own_collection_database(tmp_path:
     assert _project_database_for_runbook(workspace, game_design, factory) == workspace / ".state" / "game-design-runbooks.sqlite3"
     assert _project_database_for_runbook(workspace, product, factory) == workspace / ".state" / "runbooks.sqlite3"
     assert _project_database_for_runbook(workspace, tmp_path / "runbooks" / "F001.md", factory) == factory
+
+
+def test_project_watchdog_uses_dedicated_recovery_agents(monkeypatch, tmp_path: Path):
+    captured = {}
+
+    class Completed:
+        returncode = 0
+
+    def run(command, cwd, env, check):
+        captured.update(command=command, cwd=cwd, env=env, check=check)
+        return Completed()
+
+    monkeypatch.setattr(cli.subprocess, "run", run)
+    monkeypatch.setenv("SUPERVISOR_RECOVERY_CODING_AGENTS", "codex")
+
+    _repair_project_collection_failure(tmp_path / "project", tmp_path, 1, "ValueError: broken collection")
+
+    assert captured["env"]["SUPERVISOR_PROJECT_REPAIR_ACTIVE"] == "1"
+    assert captured["env"]["SUPERVISOR_CODING_AGENTS"] == "codex"
+    assert "--project" in captured["command"]
+    assert any("ValueError: broken collection" in value for value in captured["command"])
 
 
 def test_registered_collections_follow_explicit_children_recursively(tmp_path: Path, monkeypatch):

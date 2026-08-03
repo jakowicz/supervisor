@@ -13,3 +13,4 @@ def test_factory_requires_authoring_to_continue_through_implementation_gates():
     assert "reason not to create an allocated R contract" in quality_stage
     assert "checkpoint**, not the final manifest audit" in game_design_stage
     assert "reason to stop for user review" in game_design_stage
+    assert "must never rewrite its own" in game_design_stage

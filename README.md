@@ -348,6 +348,9 @@ terminal evidence to the next eligible coding agent. The agent is instructed to
 repair the concrete failure in the project worktree and rerun the focused check
 where its sandbox permits. After it returns `pass`, Supervisor reruns the
 configured independent terminal validation command before accepting the task.
+For project-wide collection repairs, Supervisor restarts its CLI process before
+retrying so a repair to Supervisor itself is loaded rather than bypassed by the
+already-imported process.
 This is a bounded loop controlled by the configured agent retry limits. Missing
 runtimes, permissions, credentials, or other environment failures still stop
 for review rather than asking an agent to guess at infrastructure changes.
@@ -553,6 +556,7 @@ accepts its own work.
 | Configuration | Project-owned decision |
 | --- | --- |
 | `SUPERVISOR_CODING_AGENTS` | Which implementation adapters are eligible and their order. |
+| `SUPERVISOR_RECOVERY_CODING_AGENTS` | Which coding adapters repair a whole project run that stopped unexpectedly. Defaults to `codex`; this is separate from normal task work. |
 | `SUPERVISOR_AGENT_ORDER` | Which configured stages run for this project. |
 | `*_COMMAND` | The exact adapter, browser, visual-review, or project command to invoke. |
 | `SUPERVISOR_TEST_COMMANDS` | Ordered deterministic validation commands. |

@@ -8,6 +8,7 @@ import os
 import re
 import subprocess
 import sys
+import traceback
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -195,11 +196,28 @@ given for that task explicitly.""",
             except ValueError as error:
                 parser.error(str(error))
         if arguments.run_all:
-            completed = _run_collection_until_complete(
-                runbooks_directory, arguments.dry_run, arguments.continue_on_nonpass, database_path, initial_context, repo_root
-            )
-            if completed:
-                _run_registered_collections(runbooks_directory, arguments.dry_run, arguments.continue_on_nonpass, project_workspace or project_root, repo_root)
+            max_repairs = int(os.getenv("SUPERVISOR_PROJECT_REPAIR_ATTEMPTS", "2"))
+            completed_repairs = int(os.getenv("SUPERVISOR_PROJECT_REPAIR_COUNT", "0"))
+            while True:
+                try:
+                    completed = _run_collection_until_complete(
+                        runbooks_directory, arguments.dry_run, arguments.continue_on_nonpass, database_path, initial_context, repo_root
+                    )
+                    if not completed:
+                        raise RuntimeError("The collection stopped with a task requiring attention.")
+                    _run_registered_collections(runbooks_directory, arguments.dry_run, arguments.continue_on_nonpass, project_workspace or project_root, repo_root)
+                    break
+                except Exception as error:
+                    if not project_workspace or os.getenv("SUPERVISOR_PROJECT_REPAIR_ACTIVE") == "1" or completed_repairs >= max_repairs:
+                        raise
+                    evidence = "".join(traceback.format_exception(error))
+                    _repair_project_collection_failure(project_workspace, repo_root, completed_repairs + 1, evidence)
+                    # A repair may change this module (for example, the rules
+                    # that reopen a dispatcher with a missing continuation).
+                    # Restart the interpreter so the retry uses that fresh
+                    # implementation instead of the already-imported code.
+                    os.environ["SUPERVISOR_PROJECT_REPAIR_COUNT"] = str(completed_repairs + 1)
+                    os.execv(sys.executable, [sys.executable, *sys.argv])
         else:
             _run_task_range(runbooks, arguments.dry_run, arguments.continue_on_nonpass, database_path, initial_context, repo_root)
         return
@@ -626,6 +644,46 @@ def _initial_document(directory: Path, explicit_path: Path | None = None) -> str
     raise ValueError(f"--run-all requires {expected}.")
 
 
+def _repair_project_collection_failure(workspace: Path, repo_root: Path, attempt: int, evidence: str) -> None:
+    """Give any project-collection failure to Codex, then let the caller retry."""
+
+    repair_id = f"AR{attempt:04d}-{uuid.uuid4().hex[:8]}"
+    print(
+        f"PROJECT REPAIR {attempt} · collection failure captured; sending it to Codex before retrying.",
+        file=sys.stderr,
+        flush=True,
+    )
+    environment = os.environ.copy()
+    environment["SUPERVISOR_PROJECT_REPAIR_ACTIVE"] = "1"
+    environment["SUPERVISOR_AUTO_COMMIT"] = "false"
+    environment["SUPERVISOR_AUTO_PUSH"] = "false"
+    # Recovery is a separate policy from ordinary product work.  An unset
+    # value deliberately prefers Codex for diagnosis of runner-level faults.
+    environment["SUPERVISOR_CODING_AGENTS"] = os.getenv(
+        "SUPERVISOR_RECOVERY_CODING_AGENTS", "codex"
+    )
+    package_root = str(Path(__file__).resolve().parents[1])
+    inherited_path = environment.get("PYTHONPATH", "")
+    environment["PYTHONPATH"] = package_root if not inherited_path else package_root + os.pathsep + inherited_path
+    command = [
+        sys.executable, "-m", "supervisor.cli",
+        "--project", str(workspace),
+        "--task-id", repair_id,
+        "--title", "Repair project collection failure",
+        "--objective", (
+            "The Supervisor project collection failed or stopped. Work in the project and generator "
+            "repository using the terminal. Inspect the captured traceback and durable state; fix the root "
+            "cause rather than weakening validations; then run a focused check. The parent collection will "
+            "retry automatically after you pass. Captured failure follows:\n\n" + evidence[-12000:]
+        ),
+        "--acceptance", "The captured collection failure has a concrete root-cause fix.",
+        "--acceptance", "A focused terminal validation for the repair passes.",
+    ]
+    completed = subprocess.run(command, cwd=repo_root, env=environment, check=False)
+    if completed.returncode:
+        raise RuntimeError(f"Codex project-repair task {repair_id} exited {completed.returncode}.")
+
+
 def _project_workspace(value: str) -> Path:
     """Resolve a named project workspace without consulting the CLI install path."""
 
@@ -658,24 +716,27 @@ def _project_database_for_runbook(workspace: Path, runbook: Path, factory_databa
 
 
 def _authoring_output_errors(runbook: Path) -> list[str]:
-    """Return structural errors for the R contracts owned by one B runbook."""
+    """Return structural errors for outputs promised by a bounded authoring task."""
 
-    if not re.fullmatch(r"(?:B|GB)\d+", runbook.stem):
+    if not re.fullmatch(r"(?:B|GB|GD)\d+", runbook.stem):
         return []
     document = runbook.read_text(encoding="utf-8")
     output_section = re.search(r"^## Output list\s*$\n(.*?)(?=^## |\Z)", document, re.MULTILINE | re.DOTALL)
     if not output_section:
         return ["missing an ## Output list section"]
     is_game_design_author = runbook.stem.startswith("GB")
-    expected_ids = sorted(set(re.findall(r"(?:\.\./runbooks/)?(" + (r"G\d+" if is_game_design_author else r"R\d+") + r")\.md", output_section.group(1))))
+    is_game_design_dispatcher = runbook.stem.startswith("GD")
+    pattern = r"G\d+" if is_game_design_author else (r"(?:GB|GD|GC|GQ)\d+" if is_game_design_dispatcher else r"R\d+")
+    expected_ids = sorted(set(re.findall(r"(?:\.\./runbooks/)?(" + pattern + r")\.md", output_section.group(1))))
     if not expected_ids:
-        return ["declares no R-series outputs"]
-    if len(expected_ids) > 5:
+        series = "game-design continuation" if is_game_design_dispatcher else "R-series"
+        return [f"declares no {series} outputs"]
+    if not is_game_design_dispatcher and len(expected_ids) > 5:
         series = "G-series design" if is_game_design_author else "R-series implementation"
         return [f"declares {len(expected_ids)} {series} outputs; limit is 5"]
     errors: list[str] = []
     for task_id in expected_ids:
-        output = (runbook.parent / f"{task_id}.md") if is_game_design_author else (runbook.parent.parent / "runbooks" / f"{task_id}.md")
+        output = (runbook.parent / f"{task_id}.md") if (is_game_design_author or is_game_design_dispatcher) else (runbook.parent.parent / "runbooks" / f"{task_id}.md")
         if not output.is_file():
             errors.append(f"missing {task_id}.md")
             continue
@@ -686,10 +747,11 @@ def _authoring_output_errors(runbook: Path) -> list[str]:
             continue
         if task.task_id != task_id:
             errors.append(f"{task_id}.md declares task_id {task.task_id}")
-        batch = task.design_authoring_batch if is_game_design_author else task.authoring_batch
-        field = "design_authoring_batch" if is_game_design_author else "authoring_batch"
-        if batch != runbook.stem:
-            errors.append(f"{task_id}.md has {field} {batch or '<blank>'}")
+        if not is_game_design_dispatcher:
+            batch = task.design_authoring_batch if is_game_design_author else task.authoring_batch
+            field = "design_authoring_batch" if is_game_design_author else "authoring_batch"
+            if batch != runbook.stem:
+                errors.append(f"{task_id}.md has {field} {batch or '<blank>'}")
     return errors
 
 
