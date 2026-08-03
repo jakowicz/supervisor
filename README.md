@@ -352,6 +352,21 @@ This is a bounded loop controlled by the configured agent retry limits. Missing
 runtimes, permissions, credentials, or other environment failures still stop
 for review rather than asking an agent to guess at infrastructure changes.
 
+### Visible macOS repair terminal
+
+For repair work you want to watch, Supervisor includes a small wrapper that
+opens an iTerm2 tab (or falls back to Terminal.app), runs a command in the
+chosen project directory, and can wait for the command's exit status:
+
+```zsh
+scripts/open-visible-terminal.sh --cwd /path/to/project --wait -- \
+  supervisor-run --project my-project
+```
+
+The wrapper is useful for a parent automation that must wait before retrying.
+It is intentionally opt-in for general Supervisor tasks: projects and CI can
+remain headless while a local orchestration script chooses visible repair work.
+
 Evidence and run history are stored in `<project-root>/.state/supervisor.sqlite3`.
 Configured QA commands record their evidence in the project-defined location.
 
