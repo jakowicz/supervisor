@@ -855,7 +855,21 @@ def _authoring_output_errors(runbook: Path) -> list[str]:
             return []
         successor_ids = sorted(set(re.findall(r"(GD\d+)\.md", output_section.group(1))))
         if not successor_ids:
-            return ["left the game-design manifest pending without a GD successor"]
+            reverse_dependencies: list[str] = []
+            for candidate in sorted(runbook.parent.glob("GD*.md")):
+                try:
+                    candidate_task = load_task(candidate)
+                except ValueError:
+                    continue
+                if runbook.stem in candidate_task.dependencies:
+                    reverse_dependencies.append(candidate.stem)
+            if len(reverse_dependencies) == 1:
+                successor = reverse_dependencies[0]
+                return [
+                    f"the ## Output list must literally include `{successor}.md`; "
+                    "references in the manifest, audit prose, or agent summary do not count"
+                ]
+            return ["left the game-design manifest pending without a GD successor in its ## Output list"]
         errors: list[str] = []
         for task_id in successor_ids:
             output = runbook.parent / f"{task_id}.md"
@@ -902,6 +916,19 @@ def _authoring_output_errors(runbook: Path) -> list[str]:
     return errors
 
 
+def _authoring_repair_instruction(runbook: Path, errors: list[str]) -> str:
+    """Build an exact, bounded repair handoff for a structural contract failure."""
+
+    details = "\n".join(f"- {error}" for error in errors)
+    return (
+        f"Structural authoring-output validation failed for the exact runbook {runbook}.\n"
+        f"Edit that Markdown file and resolve every condition below before returning pass:\n{details}\n"
+        "The validator reads literal Markdown file references from that runbook's "
+        "`## Output list`. A reference written only in a manifest, objective, audit prose, "
+        "acceptance criterion, or agent result summary does not satisfy the contract."
+    )
+
+
 def _reopen_invalid_authoring_tasks(runbooks: list[Path], states: dict[str, dict | None], database_path: Path) -> list[str]:
     """Reopen accepted authoring tasks whose promised downstream work is invalid."""
 
@@ -913,7 +940,7 @@ def _reopen_invalid_authoring_tasks(runbooks: list[Path], states: dict[str, dict
                 continue
             errors = _authoring_output_errors(runbook)
             if errors:
-                store.reopen_task(runbook.stem, "Authoring output validation failed: " + "; ".join(errors))
+                store.reopen_task(runbook.stem, _authoring_repair_instruction(runbook, errors))
                 reopened.append(runbook.stem)
     finally:
         store.close()
@@ -1027,7 +1054,8 @@ def _run_ready_prerequisite_collections(
 
 
 def _run_task_range(
-    runbooks: list[Path], dry_run: bool, continue_on_nonpass: bool, database_path: Path, initial_context: str = "", repo_root: Path | None = None
+    runbooks: list[Path], dry_run: bool, continue_on_nonpass: bool, database_path: Path, initial_context: str = "", repo_root: Path | None = None,
+    contract_repair_counts: dict[str, int] | None = None,
 ) -> bool:
     """Run independent CLI invocations sequentially in one shared worktree."""
 
@@ -1066,6 +1094,34 @@ def _run_task_range(
             store.close()
         status = state.get("status") if state else "missing_state"
         if status == "accepted":
+            errors = _authoring_output_errors(runbook)
+            if errors:
+                counts = contract_repair_counts if contract_repair_counts is not None else {}
+                counts[task_id] = counts.get(task_id, 0) + 1
+                instruction = _authoring_repair_instruction(runbook, errors)
+                if counts[task_id] > 2:
+                    raise ValueError(
+                        f"{task_id} repeated the same structural authoring-output failure after "
+                        f"two bounded repair attempts.\n{instruction}"
+                    )
+                store = RunStore(database_path)
+                try:
+                    store.reopen_task(task_id, instruction)
+                finally:
+                    store.close()
+                print(
+                    f"BATCH {index:02d}/{len(runbooks):02d} CONTRACT REJECTED {task_id} · "
+                    + "; ".join(errors),
+                    file=sys.stderr,
+                    flush=True,
+                )
+                print(
+                    f"CONTRACT REPAIR QUEUED · exact instructions persisted for Codex "
+                    f"(attempt {counts[task_id]}/2).",
+                    file=sys.stderr,
+                    flush=True,
+                )
+                return True
             print(f"BATCH {index:02d}/{len(runbooks):02d} DONE {task_id} · accepted", file=sys.stderr, flush=True)
             continue
         message = f"BATCH {index:02d}/{len(runbooks):02d} STOP {task_id} · state={status}"
@@ -1088,6 +1144,7 @@ def _run_collection_until_complete(
     """
 
     wave = 0
+    contract_repair_counts: dict[str, int] = {}
     while True:
         runbooks = _collection_runbooks(directory)
         if not runbooks:
@@ -1131,7 +1188,15 @@ def _run_collection_until_complete(
             return True
         wave += 1
         print(f"COLLECTION WAVE {wave:02d} · {len(pending)} pending tasks in {directory}", file=sys.stderr, flush=True)
-        if not _run_task_range(runnable, dry_run, continue_on_nonpass, database_path, initial_context, repo_root):
+        if not _run_task_range(
+            runnable,
+            dry_run,
+            continue_on_nonpass,
+            database_path,
+            initial_context,
+            repo_root,
+            contract_repair_counts,
+        ):
             return False
 
 

@@ -5,7 +5,7 @@ import pytest
 from pathlib import Path
 
 from supervisor import cli
-from supervisor.cli import START_STAGES, _authoring_output_errors, _can_recover_qwen, _collection_runbooks, _completion_banner, _concise_progress, _elapsed_label, _expand_task_range, _initial_document, _long_running_agent_notice, _project_database_for_runbook, _project_workspace, _qwen_session_to_resume, _recovered_qwen_event, _reopen_invalid_authoring_tasks, _repair_project_collection_failure, _resume_stage, _retry_stage, _run_collection_until_complete, _run_registered_collections, _run_summary, _should_skip_accepted_task, _unmet_dependencies
+from supervisor.cli import START_STAGES, _authoring_output_errors, _authoring_repair_instruction, _can_recover_qwen, _collection_runbooks, _completion_banner, _concise_progress, _elapsed_label, _expand_task_range, _initial_document, _long_running_agent_notice, _project_database_for_runbook, _project_workspace, _qwen_session_to_resume, _recovered_qwen_event, _reopen_invalid_authoring_tasks, _repair_project_collection_failure, _resume_stage, _retry_stage, _run_collection_until_complete, _run_registered_collections, _run_summary, _should_skip_accepted_task, _unmet_dependencies
 from supervisor.failure_summary import _deterministic_summary, summarize_failure
 from supervisor.models import NextStep, RunEvent, Status, Task, TaskRun, WorkerResult
 from supervisor.storage import RunStore
@@ -324,11 +324,67 @@ def test_pending_game_design_audit_requires_a_real_dispatcher_successor(tmp_path
     )
 
     assert _authoring_output_errors(audit) == [
-        "left the game-design manifest pending without a GD successor"
+        "left the game-design manifest pending without a GD successor in its ## Output list"
     ]
 
     audit.write_text(audit.read_text(encoding="utf-8").replace("- Manifest remains pending.", "- `GD0004.md`"), encoding="utf-8")
     assert _authoring_output_errors(audit) == ["missing GD0004.md"]
+
+
+def test_pending_audit_repair_names_the_exact_existing_successor_and_section(tmp_path: Path):
+    collection = tmp_path / "game-design-runbooks"
+    planning = tmp_path / "planning"
+    collection.mkdir()
+    planning.mkdir()
+    (planning / "game-design-manifest.json").write_text('{"status":"pending"}', encoding="utf-8")
+    audit = collection / "GQ0001.md"
+    audit.write_text(
+        "---\ntask_id: GQ0001\nsequence: 1\ntitle: Audit\nbrowser_impact: not_applicable\nplaywright_spec:\n---\n\n## Objective\n\nAudit.\n\n## Output list\n\n- Manifest only.\n\n## Acceptance criteria\n\n- Accurate.\n",
+        encoding="utf-8",
+    )
+    (collection / "GD0004.md").write_text(
+        "---\ntask_id: GD0004\nsequence: 2\ndependencies: GQ0001\ntitle: Continue\nbrowser_impact: not_applicable\nplaywright_spec:\n---\n\n## Objective\n\nContinue.\n\n## Output list\n\n- `G0002.md`\n\n## Acceptance criteria\n\n- Done.\n",
+        encoding="utf-8",
+    )
+
+    errors = _authoring_output_errors(audit)
+    instruction = _authoring_repair_instruction(audit, errors)
+
+    assert errors == [
+        "the ## Output list must literally include `GD0004.md`; references in the manifest, audit prose, or agent summary do not count"
+    ]
+    assert str(audit) in instruction
+    assert "Edit that Markdown file" in instruction
+    assert "`## Output list`" in instruction
+
+
+def test_batch_rejects_an_accepted_task_with_an_invalid_output_contract(monkeypatch, tmp_path: Path, capsys):
+    collection = tmp_path / "authoring-runbooks"
+    collection.mkdir()
+    writer = collection / "B0001.md"
+    writer.write_text(
+        "---\ntask_id: B0001\nsequence: 1\ntitle: Write R files\nbrowser_impact: not_applicable\nplaywright_spec:\n---\n\n## Objective\n\nWrite.\n\n## Output list\n\n- `R0001.md`\n\n## Acceptance criteria\n\n- Done.\n",
+        encoding="utf-8",
+    )
+    database = tmp_path / ".state" / "authoring-runbooks.sqlite3"
+    store = RunStore(database)
+    store.claim_task("B0001", "run-1", 0)
+    store.finish_task(TaskRun(task=Task(task_id="B0001", title="Write"), run_id="run-1", status=Status.PASS, route="accepted", worker_results=[]))
+    store.close()
+    monkeypatch.setattr(cli.subprocess, "run", lambda *_args, **_kwargs: type("Completed", (), {"returncode": 0})())
+    repair_counts: dict[str, int] = {}
+
+    assert cli._run_task_range([writer], False, False, database, repo_root=tmp_path, contract_repair_counts=repair_counts) is True
+
+    store = RunStore(database)
+    state = store.state_for("B0001")
+    store.close()
+    assert state["status"] == "interrupted"
+    assert "Edit that Markdown file" in state["continuation_summary"]
+    assert repair_counts == {"B0001": 1}
+    output = capsys.readouterr().err
+    assert "CONTRACT REJECTED B0001" in output
+    assert "CONTRACT REPAIR QUEUED" in output
 
 
 def test_game_design_completion_gate_requires_accepted_final_audit(tmp_path: Path):

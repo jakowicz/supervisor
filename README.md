@@ -379,6 +379,15 @@ failed. Tune those thresholds with
 `SUPERVISOR_LONG_RUNNING_WARNING_SECONDS` and
 `SUPERVISOR_LONG_RUNNING_WARNING_INTERVAL_SECONDS`.
 
+After a B/GB/GD/GQ authoring task returns successfully, the collection runner
+immediately validates its generated-output contract before printing the batch
+as accepted. A structural mismatch is shown as `CONTRACT REJECTED`, and Codex
+receives the exact runbook path, failed condition, and `## Output list` rule.
+References written only in prose, a manifest, or an agent summary do not count.
+The same task receives at most two bounded contract-repair attempts in one
+collection run; a repeated mismatch then stops with the full deterministic
+error instead of entering an unbounded agent loop.
+
 Project-wide recovery uses explicit transitions:
 
 ```text
