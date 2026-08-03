@@ -855,21 +855,10 @@ def _authoring_output_errors(runbook: Path) -> list[str]:
             return []
         successor_ids = sorted(set(re.findall(r"(GD\d+)\.md", output_section.group(1))))
         if not successor_ids:
-            reverse_dependencies: list[str] = []
-            for candidate in sorted(runbook.parent.glob("GD*.md")):
-                try:
-                    candidate_task = load_task(candidate)
-                except ValueError:
-                    continue
-                if runbook.stem in candidate_task.dependencies:
-                    reverse_dependencies.append(candidate.stem)
-            if len(reverse_dependencies) == 1:
-                successor = reverse_dependencies[0]
-                return [
-                    f"the ## Output list must literally include `{successor}.md`; "
-                    "references in the manifest, audit prose, or agent summary do not count"
-                ]
-            return ["left the game-design manifest pending without a GD successor in its ## Output list"]
+            return [
+                "left the game-design manifest pending without the next unused runnable "
+                "GD successor in its ## Output list"
+            ]
         errors: list[str] = []
         for task_id in successor_ids:
             output = runbook.parent / f"{task_id}.md"
@@ -883,6 +872,18 @@ def _authoring_output_errors(runbook: Path) -> list[str]:
                 continue
             if task.task_id != task_id:
                 errors.append(f"{task_id}.md declares task_id {task.task_id}")
+        if errors:
+            return errors
+        final_audit = manifest.get("final_audit")
+        if not isinstance(final_audit, dict) or final_audit.get("task_id") != runbook.stem:
+            return [
+                "left the game-design manifest pending without recording this "
+                f"audit as `final_audit.task_id: {runbook.stem}`"
+            ]
+        if final_audit.get("status") != "pending":
+            return ["pending game-design final_audit must have status `pending`"]
+        if final_audit.get("decision") != "manifest_pending":
+            return ["pending game-design final_audit must record decision `manifest_pending`"]
         return errors
     pattern = r"G\d+" if is_game_design_author else (r"(?:GB|GD|GC|GQ)\d+" if is_game_design_dispatcher else r"R\d+")
     expected_ids = sorted(set(re.findall(r"(?:\.\./runbooks/)?(" + pattern + r")\.md", output_section.group(1))))
@@ -942,6 +943,66 @@ def _reopen_invalid_authoring_tasks(runbooks: list[Path], states: dict[str, dict
             if errors:
                 store.reopen_task(runbook.stem, _authoring_repair_instruction(runbook, errors))
                 reopened.append(runbook.stem)
+    finally:
+        store.close()
+    return reopened
+
+
+def _reopen_pending_game_design_audits(
+    runbooks: list[Path], states: dict[str, dict | None], database_path: Path,
+) -> list[str]:
+    """Re-run an accepted pending audit after completed successor work.
+
+    A GQ audit may correctly leave a manifest pending and dispatch a GD
+    successor. Once that successor finishes, the audit must run again. If the
+    re-audit still leaves the manifest pending, it must create a new runnable
+    successor rather than pointing at already-exhausted work.
+    """
+
+    reopened: list[str] = []
+    store = RunStore(database_path)
+    try:
+        for runbook in runbooks:
+            if not re.fullmatch(r"GQ\d+", runbook.stem):
+                continue
+            audit_state = states.get(runbook.stem) or {}
+            if audit_state.get("status") != "accepted":
+                continue
+            manifest_path = runbook.parent.parent / "planning" / "game-design-manifest.json"
+            try:
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if not isinstance(manifest, dict) or manifest.get("status") != "pending":
+                continue
+            output_section = re.search(
+                r"^## Output list\s*$\n(.*?)(?=^## |\Z)",
+                runbook.read_text(encoding="utf-8"), re.MULTILINE | re.DOTALL,
+            )
+            successor_ids = sorted(set(re.findall(r"(GD\d+)\.md", output_section.group(1)))) if output_section else []
+            if not successor_ids:
+                continue
+            audit_updated_at = str(audit_state.get("updated_at") or "")
+            successor_states = [states.get(task_id) or {} for task_id in successor_ids]
+            if not all(state.get("status") == "accepted" for state in successor_states):
+                continue
+            successor_is_newer = any(
+                str(state.get("updated_at") or "") > audit_updated_at
+                for state in successor_states
+            )
+            if successor_is_newer:
+                reason = (
+                    "An accepted bounded game-design successor completed after this pending final audit. "
+                    "Re-run the audit against its current card-level evidence and update the manifest decision."
+                )
+            else:
+                reason = (
+                    "This accepted final audit left the manifest pending but its ## Output list points only "
+                    "to already-completed successors. Create the next unused bounded GD successor, write its "
+                    "runbook, and replace the exhausted successor reference in this audit's ## Output list."
+                )
+            store.reopen_task(runbook.stem, reason)
+            reopened.append(runbook.stem)
     finally:
         store.close()
     return reopened
@@ -1155,6 +1216,7 @@ def _run_collection_until_complete(
         finally:
             store.close()
         reopened = _reopen_invalid_authoring_tasks(runbooks, states, database_path)
+        reopened.extend(_reopen_pending_game_design_audits(runbooks, states, database_path))
         if reopened:
             print(
                 "COLLECTION REOPENED · " + ", ".join(reopened) +

@@ -388,6 +388,20 @@ The same task receives at most two bounded contract-repair attempts in one
 collection run; a repeated mismatch then stops with the full deterministic
 error instead of entering an unbounded agent loop.
 
+A runbook that produces specialised evidence may declare one additional
+deterministic check in its front matter:
+
+```yaml
+validation_command: python3 scripts/validate_evidence.py --batch batch-01
+```
+
+Supervisor appends this command to the project-wide
+`SUPERVISOR_TEST_COMMANDS` for that task only and exports
+`SUPERVISOR_CURRENT_TASK_ID`. The task cannot be accepted unless both the
+project checks and its evidence-specific check pass. Generated runbooks must
+never use this field for subjective review; it is for deterministic assertions
+over files, schemas, identifiers, counts, and other inspectable evidence.
+
 Project-wide recovery uses explicit transitions:
 
 ```text
@@ -544,7 +558,10 @@ context to every task. Without the flag, it looks for `INITIAL.md` in the
 collection; a generated collection can instead inherit its parent project's
 `PROJECT_BRIEF.md`. It re-enumerates the collection after each accepted wave,
 so bounded planning or authoring tasks can safely create the next wave without
-the operator restarting Supervisor.
+the operator restarting Supervisor. When a game-design final audit leaves its
+manifest pending, Supervisor also reopens that audit once its newer bounded
+successor is accepted, so the audit can make a fresh evidence-based handoff
+decision rather than leaving the parent collection stranded.
 
 For intentionally chained collections, add a JSON registration beneath the
 parent collection:

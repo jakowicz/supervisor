@@ -137,4 +137,5 @@ def load_task(path: Path) -> Task:
         authoring_batch=metadata.get("authoring_batch", ""),
         design_authoring_batch=metadata.get("design_authoring_batch", ""),
         factory_stages=[value.strip() for value in metadata.get("factory_stages", "").split(",") if value.strip()],
+        validation_command=metadata.get("validation_command", ""),
     )

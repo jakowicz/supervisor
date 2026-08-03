@@ -19,6 +19,32 @@ def test_tester_uses_an_ordered_project_validation_contract(monkeypatch, tmp_pat
     assert "Configured project checks" in result.summary
 
 
+def test_tester_appends_a_task_specific_validation_command(monkeypatch, tmp_path):
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append((command, kwargs["env"].get("SUPERVISOR_CURRENT_TASK_ID")))
+        return SimpleNamespace(returncode=0, stdout="ok", stderr="")
+
+    monkeypatch.setenv("SUPERVISOR_TEST_COMMANDS", '["git diff --check"]')
+    monkeypatch.setattr("supervisor.workers.tester.subprocess.run", fake_run)
+
+    result = run(
+        Task(
+            task_id="G0010",
+            title="Author evidence",
+            validation_command="python3 scripts/validate.py --batch GPI-002",
+        ),
+        tmp_path,
+    )
+
+    assert calls == [
+        (["git", "diff", "--check"], "G0010"),
+        (["python3", "scripts/validate.py", "--batch", "GPI-002"], "G0010"),
+    ]
+    assert result.status is Status.PASS
+
+
 def test_tester_requires_a_project_validation_contract(monkeypatch, tmp_path):
     monkeypatch.delenv("SUPERVISOR_TEST_COMMAND", raising=False)
     monkeypatch.delenv("SUPERVISOR_TEST_COMMANDS", raising=False)

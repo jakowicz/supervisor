@@ -72,8 +72,20 @@ def run(task: Task, repo_root: Path, dry_run: bool = False) -> WorkerResult:
             summary="No project validation contract is configured. Set SUPERVISOR_TEST_COMMANDS via `supervisor configure`.",
             recommended_next_step=NextStep.ASK_USER,
         )
+    if task.validation_command:
+        commands.append(shlex.split(task.validation_command))
+    environment = os.environ.copy()
+    environment["SUPERVISOR_CURRENT_TASK_ID"] = task.task_id
     for command in commands:
-        completed = subprocess.run(command, cwd=repo_root, capture_output=True, text=True, check=False, timeout=1800)
+        completed = subprocess.run(
+            command,
+            cwd=repo_root,
+            env=environment,
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=1800,
+        )
         output = "$ " + " ".join(command) + "\n" + completed.stdout + completed.stderr
         logs.append(output)
         if completed.returncode != 0:

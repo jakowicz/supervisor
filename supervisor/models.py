@@ -107,6 +107,10 @@ class Task(BaseModel):
     # separate from B-series writers that create implementation R tasks.
     design_authoring_batch: str = ""
     factory_stages: list[str] = Field(default_factory=list)
+    # A runbook may add one deterministic, task-specific validation command to
+    # the project-wide test contract. This is useful for bounded evidence work
+    # whose exact output cannot be proven by a generic repository check.
+    validation_command: str = ""
     # The graph sets this only for the independent Codex final-review stage.
     # Runbooks always remain implementation contracts and need not declare it.
     execution_mode: str = "implementation"

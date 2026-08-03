@@ -5,7 +5,7 @@ import pytest
 from pathlib import Path
 
 from supervisor import cli
-from supervisor.cli import START_STAGES, _authoring_output_errors, _authoring_repair_instruction, _can_recover_qwen, _collection_runbooks, _completion_banner, _concise_progress, _elapsed_label, _expand_task_range, _initial_document, _long_running_agent_notice, _project_database_for_runbook, _project_workspace, _qwen_session_to_resume, _recovered_qwen_event, _reopen_invalid_authoring_tasks, _repair_project_collection_failure, _resume_stage, _retry_stage, _run_collection_until_complete, _run_registered_collections, _run_summary, _should_skip_accepted_task, _unmet_dependencies
+from supervisor.cli import START_STAGES, _authoring_output_errors, _authoring_repair_instruction, _can_recover_qwen, _collection_runbooks, _completion_banner, _concise_progress, _elapsed_label, _expand_task_range, _initial_document, _long_running_agent_notice, _project_database_for_runbook, _project_workspace, _qwen_session_to_resume, _recovered_qwen_event, _reopen_invalid_authoring_tasks, _reopen_pending_game_design_audits, _repair_project_collection_failure, _resume_stage, _retry_stage, _run_collection_until_complete, _run_registered_collections, _run_summary, _should_skip_accepted_task, _unmet_dependencies
 from supervisor.failure_summary import _deterministic_summary, summarize_failure
 from supervisor.models import NextStep, RunEvent, Status, Task, TaskRun, WorkerResult
 from supervisor.storage import RunStore
@@ -324,14 +324,28 @@ def test_pending_game_design_audit_requires_a_real_dispatcher_successor(tmp_path
     )
 
     assert _authoring_output_errors(audit) == [
-        "left the game-design manifest pending without a GD successor in its ## Output list"
+        "left the game-design manifest pending without the next unused runnable GD successor in its ## Output list"
     ]
 
     audit.write_text(audit.read_text(encoding="utf-8").replace("- Manifest remains pending.", "- `GD0004.md`"), encoding="utf-8")
     assert _authoring_output_errors(audit) == ["missing GD0004.md"]
 
+    (collection / "GD0004.md").write_text(
+        "---\ntask_id: GD0004\nsequence: 2\ntitle: Continue\nbrowser_impact: not_applicable\nplaywright_spec:\n---\n\n## Objective\n\nContinue.\n\n## Acceptance criteria\n\n- Done.\n",
+        encoding="utf-8",
+    )
+    assert _authoring_output_errors(audit) == [
+        "left the game-design manifest pending without recording this audit as `final_audit.task_id: GQ0001`"
+    ]
 
-def test_pending_audit_repair_names_the_exact_existing_successor_and_section(tmp_path: Path):
+    (planning / "game-design-manifest.json").write_text(
+        '{"status":"pending","final_audit":{"task_id":"GQ0001","status":"pending","decision":"manifest_pending"}}',
+        encoding="utf-8",
+    )
+    assert _authoring_output_errors(audit) == []
+
+
+def test_pending_audit_repair_requires_a_new_runnable_successor_and_exact_section(tmp_path: Path):
     collection = tmp_path / "game-design-runbooks"
     planning = tmp_path / "planning"
     collection.mkdir()
@@ -351,7 +365,7 @@ def test_pending_audit_repair_names_the_exact_existing_successor_and_section(tmp
     instruction = _authoring_repair_instruction(audit, errors)
 
     assert errors == [
-        "the ## Output list must literally include `GD0004.md`; references in the manifest, audit prose, or agent summary do not count"
+        "left the game-design manifest pending without the next unused runnable GD successor in its ## Output list"
     ]
     assert str(audit) in instruction
     assert "Edit that Markdown file" in instruction
@@ -419,6 +433,74 @@ def test_game_design_completion_gate_requires_accepted_final_audit(tmp_path: Pat
         encoding="utf-8",
     )
     assert cli._game_design_completion_error(workspace, database) == "game-design manifest does not cover selected GAME-* units for trivia"
+
+
+def test_pending_game_design_audit_reopens_after_newer_accepted_successor(tmp_path: Path):
+    workspace = tmp_path / "project"
+    collection = workspace / "game-design-runbooks"
+    collection.mkdir(parents=True)
+    planning = workspace / "planning"
+    planning.mkdir()
+    (planning / "game-design-manifest.json").write_text('{"status":"pending"}', encoding="utf-8")
+    audit = collection / "GQ0001.md"
+    audit.write_text(
+        "---\ntask_id: GQ0001\nsequence: 1\ntitle: Audit\nbrowser_impact: not_applicable\nplaywright_spec:\n---\n\n"
+        "## Output list\n\n- `GD0004.md`\n",
+        encoding="utf-8",
+    )
+    successor = collection / "GD0004.md"
+    successor.write_text(
+        "---\ntask_id: GD0004\nsequence: 2\ndependencies: GQ0001\ntitle: Continue\nbrowser_impact: not_applicable\nplaywright_spec:\n---\n",
+        encoding="utf-8",
+    )
+    database = workspace / ".state" / "game-design-runbooks.sqlite3"
+    store = RunStore(database)
+    store.claim_task("GQ0001", "audit-run", 0)
+    store.finish_task(TaskRun(task=Task(task_id="GQ0001", title="Audit"), run_id="audit-run", status=Status.PASS, route="accepted", worker_results=[]))
+    store.claim_task("GD0004", "successor-run", 0)
+    store.finish_task(TaskRun(task=Task(task_id="GD0004", title="Continue"), run_id="successor-run", status=Status.PASS, route="accepted", worker_results=[]))
+    states = {path.stem: store.state_for(path.stem) for path in [audit, successor]}
+    store.close()
+
+    assert _reopen_pending_game_design_audits([audit, successor], states, database) == ["GQ0001"]
+    store = RunStore(database)
+    assert store.state_for("GQ0001")["status"] == "interrupted"
+    store.close()
+
+
+def test_pending_game_design_audit_reopens_when_its_successor_is_exhausted(tmp_path: Path):
+    workspace = tmp_path / "project"
+    collection = workspace / "game-design-runbooks"
+    collection.mkdir(parents=True)
+    planning = workspace / "planning"
+    planning.mkdir()
+    (planning / "game-design-manifest.json").write_text('{"status":"pending"}', encoding="utf-8")
+    audit = collection / "GQ0001.md"
+    audit.write_text(
+        "---\ntask_id: GQ0001\nsequence: 2\ntitle: Audit\nbrowser_impact: not_applicable\nplaywright_spec:\n---\n\n"
+        "## Output list\n\n- `GD0004.md`\n",
+        encoding="utf-8",
+    )
+    successor = collection / "GD0004.md"
+    successor.write_text(
+        "---\ntask_id: GD0004\nsequence: 1\ntitle: Continue\nbrowser_impact: not_applicable\nplaywright_spec:\n---\n",
+        encoding="utf-8",
+    )
+    database = workspace / ".state" / "game-design-runbooks.sqlite3"
+    store = RunStore(database)
+    store.claim_task("GD0004", "successor-run", 0)
+    store.finish_task(TaskRun(task=Task(task_id="GD0004", title="Continue"), run_id="successor-run", status=Status.PASS, route="accepted", worker_results=[]))
+    store.claim_task("GQ0001", "audit-run", 0)
+    store.finish_task(TaskRun(task=Task(task_id="GQ0001", title="Audit"), run_id="audit-run", status=Status.PASS, route="accepted", worker_results=[]))
+    states = {path.stem: store.state_for(path.stem) for path in [audit, successor]}
+    store.close()
+
+    assert _reopen_pending_game_design_audits([audit, successor], states, database) == ["GQ0001"]
+    store = RunStore(database)
+    state = store.state_for("GQ0001")
+    store.close()
+    assert "already-completed successors" in state["continuation_summary"]
+    assert "next unused bounded GD successor" in state["continuation_summary"]
 
 
 def test_invalid_accepted_authoring_task_is_reopened(tmp_path: Path):

@@ -123,3 +123,16 @@ def test_g_series_design_task_requires_a_gb_authoring_batch(tmp_path):
     path.write_text(path.read_text(encoding="utf-8").replace("design_authoring_batch: GB0001\n", ""), encoding="utf-8")
     with pytest.raises(ValueError, match="design_authoring_batch"):
         load_task(path)
+
+
+def test_runbook_loads_a_task_specific_validation_command(tmp_path):
+    path = tmp_path / "G0010.md"
+    path.write_text(
+        "---\ntask_id: G0010\nsequence: 10\ntitle: Evidence\nbrowser_impact: not_applicable\nplaywright_spec:\n"
+        "design_authoring_batch: GB0005\n"
+        "validation_command: python3 scripts/runbookgen_validate.py --editorial-batch GPI-002 --require-editorial-authoring\n"
+        "---\n\n## Objective\n\nAuthor evidence.\n\n## Acceptance criteria\n\n- Evidence passes its validator.\n",
+        encoding="utf-8",
+    )
+
+    assert load_task(path).validation_command.endswith("--require-editorial-authoring")
