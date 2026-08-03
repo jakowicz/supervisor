@@ -67,12 +67,28 @@ def _repair_handoff(stage: str, result: WorkerResult) -> str:
     return evidence[-12000:]
 
 
+def _preserve_repair_loop(result: WorkerResult, repairing_terminal_failure: bool) -> WorkerResult:
+    """Do not let an agent bypass retries for an already-proven QA failure."""
+
+    if not repairing_terminal_failure or result.status is not Status.NEEDS_USER_REVIEW:
+        return result
+    return result.model_copy(update={
+        "status": Status.REPAIRABLE_FAILURE,
+        "summary": (
+            "Coding agent requested user review while repairing a concrete terminal "
+            f"failure; keeping the bounded automatic repair loop active. {result.summary}"
+        ),
+        "recommended_next_step": NextStep.RETRY_QWEN,
+    })
+
+
 def create_graph(config: SupervisorConfig):
     builder = StateGraph(SupervisorState)
 
     def worker_node(stage: str, agent: str, model: str, runner: Callable[[Task], WorkerResult]):
         def node(state: SupervisorState) -> dict:
             task = state["task"]
+            repairing_terminal_failure = False
             # When deterministic QA sends work back to a coding agent, give it
             # the concrete failure rather than asking it to rediscover the
             # problem from a large worktree.  This is especially important for
@@ -81,6 +97,7 @@ def create_graph(config: SupervisorConfig):
             if stage in {"qwen", "openhands", "codex", "codex_final"} and state.get("events"):
                 prior = state["events"][-1]
                 if prior.stage in {"precheck", "test", "browser", "visual_review", "completion_audit"} and prior.status is not Status.PASS:
+                    repairing_terminal_failure = True
                     evidence = _repair_handoff(prior.stage, prior.result)
                     handoff = (
                         f"A Supervisor terminal validation stage ({prior.stage}) failed. "
@@ -140,6 +157,7 @@ def create_graph(config: SupervisorConfig):
                     os.environ.pop("SUPERVISOR_STREAM_LOG", None)
                 else:
                     os.environ["SUPERVISOR_STREAM_LOG"] = previous_stream_log
+            result = _preserve_repair_loop(result, repairing_terminal_failure)
             attempts = dict(state.get("attempts", {}))
             # Only coding attempts consume the Qwen/OpenHands/Codex retry budget.
             if stage in {"qwen", "openhands", "codex", "codex_final"}:
