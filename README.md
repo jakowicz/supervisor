@@ -369,6 +369,12 @@ tracebacks remain visible. Repeated heartbeats and per-stage evidence-file
 events are kept in `.state/live/` without flooding the terminal. Use
 `supervisor-run --verbose ...` to print every timestamped event and heartbeat,
 or set the standard `NO_COLOR` environment variable to disable colour.
+If a coding worker remains active for two minutes, normal mode prints a yellow
+long-running-agent notice with elapsed time and the live-log path, then repeats
+at most every five minutes. This means “the process is alive and Supervisor is
+waiting,” not that the task failed. Tune those thresholds with
+`SUPERVISOR_LONG_RUNNING_WARNING_SECONDS` and
+`SUPERVISOR_LONG_RUNNING_WARNING_INTERVAL_SECONDS`.
 
 Project-wide recovery uses explicit transitions:
 

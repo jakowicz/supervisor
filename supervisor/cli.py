@@ -8,6 +8,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 import traceback
 import uuid
 from datetime import datetime, timezone
@@ -56,6 +57,17 @@ def _concise_progress(message: str) -> tuple[str, str] | None:
         "INTERRUPTED": "red", "NOT": "red", "LOG": "dim",
     }.get(prefix, "cyan")
     return message, colour
+
+
+def _elapsed_label(seconds: float) -> str:
+    total = max(0, int(seconds))
+    minutes, remainder = divmod(total, 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours}h {minutes:02d}m"
+    if minutes:
+        return f"{minutes}m {remainder:02d}s"
+    return f"{remainder}s"
 
 
 def main() -> None:
@@ -339,6 +351,11 @@ given for that task explicitly.""",
             "continuation_context": "\n".join(part for part in (task.continuation_context, handoff) if part),
         })
 
+    stage_started_at: dict[str, float] = {}
+    stage_last_warning_at: dict[str, float] = {}
+    warning_after_seconds = int(os.getenv("SUPERVISOR_LONG_RUNNING_WARNING_SECONDS", "120"))
+    warning_interval_seconds = int(os.getenv("SUPERVISOR_LONG_RUNNING_WARNING_INTERVAL_SECONDS", "300"))
+
     def progress(message: str) -> None:
         line = f"{datetime.now(timezone.utc).isoformat()}  {message}"
         with live_log_path.open("a", encoding="utf-8") as live_log:
@@ -346,6 +363,25 @@ given for that task explicitly.""",
         if arguments.verbose:
             print(line, file=sys.stderr, flush=True)
         else:
+            parts = message.split(maxsplit=2)
+            event = parts[0] if parts else ""
+            stage = parts[1] if len(parts) > 1 else ""
+            now = time.monotonic()
+            if event == "START" and stage:
+                stage_started_at[stage] = now
+                stage_last_warning_at.pop(stage, None)
+            elif event == "WAIT" and stage and stage in stage_started_at:
+                elapsed = now - stage_started_at[stage]
+                last_warning = stage_last_warning_at.get(stage, 0.0)
+                if elapsed >= warning_after_seconds and (not last_warning or now - last_warning >= warning_interval_seconds):
+                    agent_name = stage.replace("_", " ").title()
+                    _terminal_notice(
+                        f"LONG-RUNNING AGENT · {agent_name} has been active for {_elapsed_label(elapsed)}. "
+                        "The worker process is alive; Supervisor is waiting for its completion response. "
+                        f"Full evidence continues in {live_log_path}.",
+                        "yellow",
+                    )
+                    stage_last_warning_at[stage] = now
             concise = _concise_progress(message)
             if concise:
                 _terminal_notice(*concise)
