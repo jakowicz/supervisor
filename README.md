@@ -329,7 +329,8 @@ flowchart TB
     next_agent -- "Retry or fallback" --> coding
     next_agent -- "No budget remains" --> review
     validation -- "Pass" --> audit["Configured completion audit"]
-    validation -- "Failure or unavailable" --> review
+    validation -- "Repairable failure" --> next_agent
+    validation -- "Unavailable/environment failure" --> review
     audit -- "Pass" --> publish["Configured Git publisher"]
     audit -- "Failure" --> next_agent
     publish -- "Pass" --> accepted["Accepted task\nReports, logs, SQLite, and telemetry updated"]
@@ -340,6 +341,16 @@ Retry budgets, coding fallback order, QA stages, and publication are all
 project policy defined in `.env`. Environment failures do not consume coding
 budget, and a task range runs sequentially, stopping before later tasks when an
 earlier task is not accepted.
+
+For a repairable precheck, test, browser, visual-review, completion-audit, or
+publish failure, Supervisor automatically sends the failing stage's bounded
+terminal evidence to the next eligible coding agent. The agent is instructed to
+repair the concrete failure in the project worktree and rerun the focused check
+where its sandbox permits. After it returns `pass`, Supervisor reruns the
+configured independent terminal validation command before accepting the task.
+This is a bounded loop controlled by the configured agent retry limits. Missing
+runtimes, permissions, credentials, or other environment failures still stop
+for review rather than asking an agent to guess at infrastructure changes.
 
 Evidence and run history are stored in `<project-root>/.state/supervisor.sqlite3`.
 Configured QA commands record their evidence in the project-defined location.
