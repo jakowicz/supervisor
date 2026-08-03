@@ -70,6 +70,18 @@ def _elapsed_label(seconds: float) -> str:
     return f"{remainder}s"
 
 
+def _long_running_agent_notice(stage: str, elapsed: float, stream_path: Path) -> str:
+    """Explain an alive but quiet worker without inventing an internal sub-step."""
+
+    agent_name = stage.replace("_", " ").title()
+    return (
+        f"{agent_name.upper()} STILL WORKING · no final response after {_elapsed_label(elapsed)}. "
+        f"{agent_name} may be inspecting files, reasoning, editing, or running commands; "
+        "its CLI does not expose a reliable current sub-step. The worker process is alive "
+        f"and Supervisor will keep waiting. Live worker stream: {stream_path}"
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Run one evidence-gated Supervisor task or an entire runbook collection.",
@@ -353,8 +365,9 @@ given for that task explicitly.""",
 
     stage_started_at: dict[str, float] = {}
     stage_last_warning_at: dict[str, float] = {}
-    warning_after_seconds = int(os.getenv("SUPERVISOR_LONG_RUNNING_WARNING_SECONDS", "120"))
-    warning_interval_seconds = int(os.getenv("SUPERVISOR_LONG_RUNNING_WARNING_INTERVAL_SECONDS", "300"))
+    stage_stream_paths: dict[str, Path] = {}
+    warning_after_seconds = int(os.getenv("SUPERVISOR_LONG_RUNNING_WARNING_SECONDS", "30"))
+    warning_interval_seconds = int(os.getenv("SUPERVISOR_LONG_RUNNING_WARNING_INTERVAL_SECONDS", "120"))
 
     def progress(message: str) -> None:
         line = f"{datetime.now(timezone.utc).isoformat()}  {message}"
@@ -374,11 +387,12 @@ given for that task explicitly.""",
                 elapsed = now - stage_started_at[stage]
                 last_warning = stage_last_warning_at.get(stage, 0.0)
                 if elapsed >= warning_after_seconds and (not last_warning or now - last_warning >= warning_interval_seconds):
-                    agent_name = stage.replace("_", " ").title()
                     _terminal_notice(
-                        f"LONG-RUNNING AGENT · {agent_name} has been active for {_elapsed_label(elapsed)}. "
-                        "The worker process is alive; Supervisor is waiting for its completion response. "
-                        f"Full evidence continues in {live_log_path}.",
+                        _long_running_agent_notice(
+                            stage,
+                            elapsed,
+                            stage_stream_paths.get(stage, live_log_path),
+                        ),
                         "yellow",
                     )
                     stage_last_warning_at[stage] = now
@@ -431,6 +445,8 @@ given for that task explicitly.""",
         """Persist a tiny handoff packet on stage start, heartbeat, and exit."""
 
         payload: dict[str, object] = {}
+        if stream_path:
+            stage_stream_paths[stage] = stream_path
         if stream_path and stage == "qwen":
             prior_stream_offset = stream_offsets.get(stream_path)
             extracted, stream_offsets[stream_path] = stream_checkpoint(

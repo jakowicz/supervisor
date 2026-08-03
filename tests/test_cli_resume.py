@@ -5,7 +5,7 @@ import pytest
 from pathlib import Path
 
 from supervisor import cli
-from supervisor.cli import START_STAGES, _authoring_output_errors, _can_recover_qwen, _collection_runbooks, _completion_banner, _concise_progress, _elapsed_label, _expand_task_range, _initial_document, _project_database_for_runbook, _project_workspace, _qwen_session_to_resume, _recovered_qwen_event, _reopen_invalid_authoring_tasks, _repair_project_collection_failure, _resume_stage, _retry_stage, _run_collection_until_complete, _run_registered_collections, _run_summary, _should_skip_accepted_task, _unmet_dependencies
+from supervisor.cli import START_STAGES, _authoring_output_errors, _can_recover_qwen, _collection_runbooks, _completion_banner, _concise_progress, _elapsed_label, _expand_task_range, _initial_document, _long_running_agent_notice, _project_database_for_runbook, _project_workspace, _qwen_session_to_resume, _recovered_qwen_event, _reopen_invalid_authoring_tasks, _repair_project_collection_failure, _resume_stage, _retry_stage, _run_collection_until_complete, _run_registered_collections, _run_summary, _should_skip_accepted_task, _unmet_dependencies
 from supervisor.failure_summary import _deterministic_summary, summarize_failure
 from supervisor.models import NextStep, RunEvent, Status, Task, TaskRun, WorkerResult
 from supervisor.storage import RunStore
@@ -31,6 +31,17 @@ def test_concise_terminal_progress_hides_noise_but_keeps_milestones():
     )
     assert _elapsed_label(125) == "2m 05s"
     assert _elapsed_label(3725) == "1h 02m"
+
+
+def test_long_running_notice_explains_a_quiet_codex_worker(tmp_path):
+    stream_path = tmp_path / "task-f001-stage-codex.log"
+
+    notice = _long_running_agent_notice("codex", 31, stream_path)
+
+    assert notice.startswith("CODEX STILL WORKING · no final response after 31s")
+    assert "does not expose a reliable current sub-step" in notice
+    assert "worker process is alive" in notice
+    assert str(stream_path) in notice
 
 
 def test_collection_stops_before_relaunching_a_task_that_needs_user_review(tmp_path, capsys):
