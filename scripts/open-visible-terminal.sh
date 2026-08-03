@@ -5,16 +5,19 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: open-visible-terminal.sh [--cwd DIR] [--wait] -- COMMAND [ARG ...]
+Usage: open-visible-terminal.sh [--cwd DIR] [--wait] [--caffeinate] -- COMMAND [ARG ...]
 
 Open an iTerm2 tab (or a Terminal.app window when iTerm2 is unavailable), run
 COMMAND visibly, and optionally wait for it to finish.  With --wait, the
 script returns COMMAND's exit status after the visible terminal reports it.
+With --caffeinate, the visible command prevents normal idle sleep while it
+runs.
 EOF
 }
 
 working_directory="$PWD"
 wait_for_completion=false
+caffeinate_command=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --cwd)
@@ -24,6 +27,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --wait)
       wait_for_completion=true
+      shift
+      ;;
+    --caffeinate)
+      caffeinate_command=true
       shift
       ;;
     --)
@@ -60,6 +67,11 @@ if [[ "$wait_for_completion" == true ]]; then
   terminal_command="cd $escaped_directory; $quoted_command; supervisor_visible_exit=\$?; printf '%s' \"\$supervisor_visible_exit\" > $escaped_status_file; exit \$supervisor_visible_exit"
 else
   terminal_command="cd $escaped_directory; exec $quoted_command"
+fi
+
+if [[ "$caffeinate_command" == true ]]; then
+  printf -v escaped_terminal_command '%q' "$terminal_command"
+  terminal_command="/usr/bin/caffeinate -dims /bin/zsh -lc $escaped_terminal_command"
 fi
 
 # Pass AppleScript source through stdin so arbitrary command text never has to

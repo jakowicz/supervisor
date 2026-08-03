@@ -13,4 +13,5 @@ def test_visible_terminal_script_has_a_parseable_help_contract():
     assert help_output.returncode == 0, help_output.stderr
     assert "--cwd DIR" in help_output.stdout
     assert "--wait" in help_output.stdout
+    assert "--caffeinate" in help_output.stdout
     assert "COMMAND" in help_output.stdout

@@ -359,13 +359,15 @@ opens an iTerm2 tab (or falls back to Terminal.app), runs a command in the
 chosen project directory, and can wait for the command's exit status:
 
 ```zsh
-scripts/open-visible-terminal.sh --cwd /path/to/project --wait -- \
+scripts/open-visible-terminal.sh --cwd /path/to/project --wait --caffeinate -- \
   supervisor-run --project my-project
 ```
 
 The wrapper is useful for a parent automation that must wait before retrying.
-It is intentionally opt-in for general Supervisor tasks: projects and CI can
-remain headless while a local orchestration script chooses visible repair work.
+`--caffeinate` prevents normal macOS idle sleep while the visible command runs.
+The wrapper is intentionally opt-in for general Supervisor tasks: projects and
+CI can remain headless while a local orchestration script chooses visible
+repair work.
 
 Evidence and run history are stored in `<project-root>/.state/supervisor.sqlite3`.
 Configured QA commands record their evidence in the project-defined location.
