@@ -820,7 +820,7 @@ def _project_database_for_runbook(workspace: Path, runbook: Path, factory_databa
 def _authoring_output_errors(runbook: Path) -> list[str]:
     """Return structural errors for outputs promised by a bounded authoring task."""
 
-    if not re.fullmatch(r"(?:B|GB|GD)\d+", runbook.stem):
+    if not re.fullmatch(r"(?:B|GB|GD|GQ)\d+", runbook.stem):
         return []
     document = runbook.read_text(encoding="utf-8")
     output_section = re.search(r"^## Output list\s*$\n(.*?)(?=^## |\Z)", document, re.MULTILINE | re.DOTALL)
@@ -828,6 +828,32 @@ def _authoring_output_errors(runbook: Path) -> list[str]:
         return ["missing an ## Output list section"]
     is_game_design_author = runbook.stem.startswith("GB")
     is_game_design_dispatcher = runbook.stem.startswith("GD")
+    is_game_design_audit = runbook.stem.startswith("GQ")
+    if is_game_design_audit:
+        manifest_path = runbook.parent.parent / "planning" / "game-design-manifest.json"
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return ["cannot inspect planning/game-design-manifest.json"]
+        if manifest.get("status") == "accepted":
+            return []
+        successor_ids = sorted(set(re.findall(r"(GD\d+)\.md", output_section.group(1))))
+        if not successor_ids:
+            return ["left the game-design manifest pending without a GD successor"]
+        errors: list[str] = []
+        for task_id in successor_ids:
+            output = runbook.parent / f"{task_id}.md"
+            if not output.is_file():
+                errors.append(f"missing {task_id}.md")
+                continue
+            try:
+                task = load_task(output)
+            except ValueError as error:
+                errors.append(f"{task_id}.md is unreadable: {error}")
+                continue
+            if task.task_id != task_id:
+                errors.append(f"{task_id}.md declares task_id {task.task_id}")
+        return errors
     pattern = r"G\d+" if is_game_design_author else (r"(?:GB|GD|GC|GQ)\d+" if is_game_design_dispatcher else r"R\d+")
     expected_ids = sorted(set(re.findall(r"(?:\.\./runbooks/)?(" + pattern + r")\.md", output_section.group(1))))
     if not expected_ids:

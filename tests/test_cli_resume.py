@@ -300,6 +300,26 @@ def test_game_design_dispatcher_cannot_complete_by_declaring_itself(tmp_path: Pa
     ]
 
 
+def test_pending_game_design_audit_requires_a_real_dispatcher_successor(tmp_path: Path):
+    collection = tmp_path / "game-design-runbooks"
+    planning = tmp_path / "planning"
+    collection.mkdir()
+    planning.mkdir()
+    (planning / "game-design-manifest.json").write_text('{"status":"pending"}', encoding="utf-8")
+    audit = collection / "GQ0001.md"
+    audit.write_text(
+        "---\ntask_id: GQ0001\nsequence: 1\ntitle: Audit\nbrowser_impact: not_applicable\nplaywright_spec:\n---\n\n## Objective\n\nAudit.\n\n## Output list\n\n- Manifest remains pending.\n\n## Acceptance criteria\n\n- Accurate.\n",
+        encoding="utf-8",
+    )
+
+    assert _authoring_output_errors(audit) == [
+        "left the game-design manifest pending without a GD successor"
+    ]
+
+    audit.write_text(audit.read_text(encoding="utf-8").replace("- Manifest remains pending.", "- `GD0004.md`"), encoding="utf-8")
+    assert _authoring_output_errors(audit) == ["missing GD0004.md"]
+
+
 def test_game_design_completion_gate_requires_accepted_final_audit(tmp_path: Path):
     workspace = tmp_path / "project"
     planning = workspace / "planning"
