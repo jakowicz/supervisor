@@ -361,6 +361,25 @@ This is a bounded loop controlled by the configured agent retry limits. Missing
 runtimes, permissions, credentials, or other environment failures still stop
 for review rather than asking an agent to guess at infrastructure changes.
 
+Normal terminal output is an organised progress narrative rather than the raw
+event stream. It shows task starts/completions, failures, recovery-agent
+handoffs, recovery results, fresh-process restarts, resumes, and final outcomes
+with colour when stderr is an interactive terminal. Fatal exceptions and their
+tracebacks remain visible. Repeated heartbeats and per-stage evidence-file
+events are kept in `.state/live/` without flooding the terminal. Use
+`supervisor-run --verbose ...` to print every timestamped event and heartbeat,
+or set the standard `NO_COLOR` environment variable to disable colour.
+
+Project-wide recovery uses explicit transitions:
+
+```text
+PROJECT FAILURE CAUGHT
+PROJECT RECOVERY STARTING
+PROJECT RECOVERY FINISHED
+SUPERVISOR RESTARTING
+PROJECT RESUMED
+```
+
 ### Visible macOS repair terminal
 
 For repair work you want to watch, Supervisor includes a small wrapper that

@@ -5,7 +5,7 @@ import pytest
 from pathlib import Path
 
 from supervisor import cli
-from supervisor.cli import START_STAGES, _authoring_output_errors, _can_recover_qwen, _collection_runbooks, _completion_banner, _expand_task_range, _initial_document, _project_database_for_runbook, _project_workspace, _qwen_session_to_resume, _recovered_qwen_event, _reopen_invalid_authoring_tasks, _repair_project_collection_failure, _resume_stage, _retry_stage, _run_collection_until_complete, _run_registered_collections, _run_summary, _should_skip_accepted_task, _unmet_dependencies
+from supervisor.cli import START_STAGES, _authoring_output_errors, _can_recover_qwen, _collection_runbooks, _completion_banner, _concise_progress, _expand_task_range, _initial_document, _project_database_for_runbook, _project_workspace, _qwen_session_to_resume, _recovered_qwen_event, _reopen_invalid_authoring_tasks, _repair_project_collection_failure, _resume_stage, _retry_stage, _run_collection_until_complete, _run_registered_collections, _run_summary, _should_skip_accepted_task, _unmet_dependencies
 from supervisor.failure_summary import _deterministic_summary, summarize_failure
 from supervisor.models import NextStep, RunEvent, Status, Task, TaskRun, WorkerResult
 from supervisor.storage import RunStore
@@ -20,6 +20,15 @@ def test_resume_starts_at_the_saved_next_stage():
     assert _resume_stage({"status": "validating", "next_action": "asset_qa"}) == "asset_qa"
     assert "test" in START_STAGES
     assert "browser" in START_STAGES
+
+
+def test_concise_terminal_progress_hides_noise_but_keeps_milestones():
+    assert _concise_progress("WAIT codex · Codex is still running") is None
+    assert _concise_progress("EVENT codex · full output saved") is None
+    assert _concise_progress("START codex · Codex") == ("START codex · Codex", "cyan")
+    assert _concise_progress("INTERRUPTED F006 · ValueError: broken") == (
+        "INTERRUPTED F006 · ValueError: broken", "red"
+    )
 
 
 def test_collection_stops_before_relaunching_a_task_that_needs_user_review(tmp_path, capsys):

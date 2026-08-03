@@ -31,6 +31,32 @@ START_STAGES = (
     "visual_review", "completion_audit", "git_publish",
 )
 
+_COLOURS = {
+    "blue": "\033[1;34m", "cyan": "\033[1;36m", "green": "\033[1;32m",
+    "yellow": "\033[1;33m", "red": "\033[1;31m", "magenta": "\033[1;35m",
+    "dim": "\033[2m", "reset": "\033[0m",
+}
+
+
+def _terminal_notice(message: str, colour: str = "cyan") -> None:
+    use_colour = sys.stderr.isatty() and "NO_COLOR" not in os.environ
+    prefix = _COLOURS[colour] if use_colour else ""
+    suffix = _COLOURS["reset"] if use_colour else ""
+    print(f"{prefix}{message}{suffix}", file=sys.stderr, flush=True)
+
+
+def _concise_progress(message: str) -> tuple[str, str] | None:
+    """Turn a raw event into one useful terminal milestone."""
+    prefix = message.split(maxsplit=1)[0] if message else ""
+    if prefix in {"WAIT", "EVENT"}:
+        return None
+    colour = {
+        "RUN": "blue", "START": "cyan", "DONE": "green", "SUCCESS": "green",
+        "RESUME": "magenta", "RECOVER": "yellow", "REPAIR": "yellow",
+        "INTERRUPTED": "red", "NOT": "red", "LOG": "dim",
+    }.get(prefix, "cyan")
+    return message, colour
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -102,6 +128,7 @@ given for that task explicitly.""",
         default="summary",
         help="Terminal completion output. Full raw evidence remains in SQLite and live logs.",
     )
+    parser.add_argument("--verbose", action="store_true", help="Print every timestamped event and heartbeat; normal mode shows concise milestones while preserving full live logs.")
     if len(sys.argv) == 1:
         parser.print_help()
         return
@@ -198,6 +225,11 @@ given for that task explicitly.""",
         if arguments.run_all:
             max_repairs = int(os.getenv("SUPERVISOR_PROJECT_REPAIR_ATTEMPTS", "2"))
             completed_repairs = int(os.getenv("SUPERVISOR_PROJECT_REPAIR_COUNT", "0"))
+            if completed_repairs:
+                _terminal_notice(
+                    f"PROJECT RESUMED · fresh Supervisor process loaded after {completed_repairs} recovery attempt(s); continuing from SQLite state.",
+                    "blue",
+                )
             while True:
                 try:
                     completed = _run_collection_until_complete(
@@ -211,12 +243,20 @@ given for that task explicitly.""",
                     if not project_workspace or os.getenv("SUPERVISOR_PROJECT_REPAIR_ACTIVE") == "1" or completed_repairs >= max_repairs:
                         raise
                     evidence = "".join(traceback.format_exception(error))
-                    _repair_project_collection_failure(project_workspace, repo_root, completed_repairs + 1, evidence)
+                    repair_exit = _repair_project_collection_failure(project_workspace, repo_root, completed_repairs + 1, evidence)
+                    if repair_exit == 0:
+                        _terminal_notice("PROJECT RECOVERY FINISHED · recovery task passed its Supervisor checks.", "green")
+                    else:
+                        _terminal_notice(
+                            f"PROJECT RECOVERY INCOMPLETE · recovery process exited {repair_exit}; persisted repairs will still be validated by the fresh run.",
+                            "yellow",
+                        )
                     # A repair may change this module (for example, the rules
                     # that reopen a dispatcher with a missing continuation).
                     # Restart the interpreter so the retry uses that fresh
                     # implementation instead of the already-imported code.
                     os.environ["SUPERVISOR_PROJECT_REPAIR_COUNT"] = str(completed_repairs + 1)
+                    _terminal_notice("SUPERVISOR RESTARTING · launching a fresh process now; accepted work will be skipped.", "magenta")
                     os.execv(sys.executable, [sys.executable, *sys.argv])
         else:
             _run_task_range(runbooks, arguments.dry_run, arguments.continue_on_nonpass, database_path, initial_context, repo_root)
@@ -301,9 +341,14 @@ given for that task explicitly.""",
 
     def progress(message: str) -> None:
         line = f"{datetime.now(timezone.utc).isoformat()}  {message}"
-        print(line, file=sys.stderr, flush=True)
         with live_log_path.open("a", encoding="utf-8") as live_log:
             live_log.write(line + "\n")
+        if arguments.verbose:
+            print(line, file=sys.stderr, flush=True)
+        else:
+            concise = _concise_progress(message)
+            if concise:
+                _terminal_notice(*concise)
 
     def stage_log_path(stage: str, stage_number: int) -> Path:
         return live_log_path.with_name(
@@ -655,14 +700,16 @@ def _repair_project_collection_failure(workspace: Path, repo_root: Path, attempt
 
     repair_id = f"AR{attempt:04d}-{uuid.uuid4().hex[:8]}"
     print("", file=sys.stderr, flush=True)
-    print("PROJECT FAILURE CAUGHT · the project run stopped before completion.", file=sys.stderr, flush=True)
-    print(
+    _terminal_notice("PROJECT FAILURE CAUGHT · the project run stopped before completion.", "red")
+    _terminal_notice(
         f"PROJECT RECOVERY STARTING · repair attempt {attempt} is being sent to "
         f"{os.getenv('SUPERVISOR_RECOVERY_CODING_AGENTS', 'codex')}.",
-        file=sys.stderr,
-        flush=True,
+        "yellow",
     )
-    print("PROJECT RECOVERY NEXT · after repair, Supervisor will restart in a fresh process and resume from SQLite state.", file=sys.stderr, flush=True)
+    _terminal_notice(
+        "PROJECT RECOVERY NEXT · after repair, Supervisor will restart in a fresh process and resume from SQLite state.",
+        "yellow",
+    )
     environment = os.environ.copy()
     environment["SUPERVISOR_PROJECT_REPAIR_ACTIVE"] = "1"
     environment["SUPERVISOR_AUTO_COMMIT"] = "false"
@@ -695,11 +742,10 @@ def _repair_project_collection_failure(workspace: Path, repo_root: Path, attempt
     ]
     completed = subprocess.run(command, cwd=repo_root, env=environment, check=False)
     if completed.returncode:
-        print(
+        _terminal_notice(
             f"PROJECT REPAIR {attempt} · Codex exited {completed.returncode}; "
             "restarting the collection to validate any persisted repair.",
-            file=sys.stderr,
-            flush=True,
+            "yellow",
         )
     return completed.returncode
 
