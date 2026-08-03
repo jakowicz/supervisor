@@ -399,6 +399,18 @@ Visual baseline rule:
   their prior expectation is no longer correct, and rerun the relevant suite.
 - If it is not intentional, fix the product or test setup instead. Never mask
   a real visual regression by blindly accepting a changed screenshot.
+
+Failure-repair protocol:
+- When the continuation checkpoint says that a Supervisor terminal stage
+  failed, treat its captured command and output as the starting evidence. Do
+  not merely describe a possible fix.
+- Use the terminal in this project worktree to inspect, repair, and rerun the
+  same focused check whenever that command is safe in your sandbox. Include
+  the command and result in `test_result`.
+- If that exact command needs an SDK, browser, or approval outside this
+  worker's sandbox, repair the demonstrated issue but do not replace the
+  independent validation. Return `pass` only when the worktree is ready for
+  Supervisor to rerun its configured terminal command after your repair.
 """
 
 

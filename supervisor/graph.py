@@ -82,7 +82,21 @@ def create_graph(config: SupervisorConfig):
                 prior = state["events"][-1]
                 if prior.stage in {"precheck", "test", "browser", "visual_review", "completion_audit"} and prior.status is not Status.PASS:
                     evidence = _repair_handoff(prior.stage, prior.result)
-                    handoff = f"Previous {prior.stage} stage failed; repair this evidence before retry:\n{evidence}"
+                    handoff = (
+                        f"A Supervisor terminal validation stage ({prior.stage}) failed. "
+                        "This is a repair task, not a request for an explanation. "
+                        "Work in the project worktree: inspect the captured command/output, "
+                        "repair the demonstrated issue, and rerun the same focused command in "
+                        "your terminal whenever the sandbox permits it. Report that rerun in "
+                        "test_result. After you return pass, Supervisor will independently run "
+                        "the configured project terminal checks again.\n\n"
+                        f"Captured terminal evidence:\n{evidence}"
+                    )
+                    if config.progress:
+                        config.progress(
+                            f"REPAIR {stage} · captured {prior.stage} terminal failure supplied; "
+                            "independent terminal validation will rerun after repair"
+                        )
                     task = task.model_copy(update={
                         "continuation_context": "\n".join(part for part in (task.continuation_context, handoff) if part),
                     })
