@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from .models import TaskRun, model_to_dict
+from .models import RunEvent, Status, TaskRun, model_to_dict
 
 
 class RunStore:
@@ -216,6 +216,23 @@ class RunStore:
             )
         self._connection.commit()
         self._write_operator_summary(run)
+
+    def latest_passing_coding_event(self, task_id: str) -> RunEvent | None:
+        """Return durable coding evidence usable by a validation-only retry."""
+
+        rows = self._connection.execute(
+            "SELECT payload FROM task_runs WHERE task_id = ? ORDER BY id DESC",
+            (task_id,),
+        ).fetchall()
+        for (payload,) in rows:
+            try:
+                run = TaskRun.model_validate(json.loads(payload))
+            except (json.JSONDecodeError, ValueError):
+                continue
+            for event in reversed(run.events):
+                if event.stage in {"qwen", "openhands", "codex", "codex_final"} and event.status is Status.PASS:
+                    return event
+        return None
 
     def next_task_run_number(self, task_id: str) -> int:
         """Return the next human-friendly ordinal for one task's live log."""

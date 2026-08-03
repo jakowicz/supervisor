@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from supervisor.models import NextStep, Status, Task, TaskRun, WorkerResult
+from supervisor.models import NextStep, RunEvent, Status, Task, TaskRun, WorkerResult
 from supervisor.storage import RunStore
 
 
@@ -62,5 +62,21 @@ def test_non_passing_run_keeps_its_next_pipeline_stage(tmp_path: Path):
         store.finish_task(run)
         assert store.state_for("D006")["status"] == "needs_user_review"
         assert store.state_for("D006")["next_action"] == "test"
+    finally:
+        store.close()
+
+
+def test_store_recovers_passing_coding_evidence_for_validation_only_retry(tmp_path: Path):
+    store = RunStore(tmp_path / "run.sqlite3")
+    try:
+        result = WorkerResult(status=Status.PASS, summary="Implemented", test_result="checks passed", recommended_next_step=NextStep.COMPLETE)
+        event = RunEvent(stage="codex", agent="Codex", model="test", attempt=1, status=Status.PASS, summary="Implemented", route="test", result=result)
+        store.save(TaskRun(task=Task(task_id="GD0001", title="Design"), run_id="run-1", status=Status.NEEDS_USER_REVIEW, route="needs_user_review", worker_results=[result], events=[event]))
+
+        recovered = store.latest_passing_coding_event("GD0001")
+
+        assert recovered is not None
+        assert recovered.stage == "codex"
+        assert recovered.result.test_result == "checks passed"
     finally:
         store.close()

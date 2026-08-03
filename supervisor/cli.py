@@ -220,6 +220,11 @@ given for that task explicitly.""",
         task = Task(task_id=arguments.task_id, title=arguments.title, objective=arguments.objective, acceptance_criteria=arguments.acceptance, sequence=arguments.sequence or 0, browser_impact=arguments.browser_impact or "not_applicable", playwright_specs=arguments.playwright_spec)
     if project_workspace and requested_runbook:
         database_path = _project_database_for_runbook(project_workspace, requested_runbook, database_path)
+        # A direct targeted invocation does not pass through
+        # ``_run_task_range``, which normally exports this value to child
+        # workers. Keep validation commands project-aware for G/GB as well as
+        # B/R recovery runs.
+        os.environ["SUPERVISOR_DATABASE_PATH"] = str(database_path)
     initial_context = os.getenv("SUPERVISOR_INITIAL_CONTEXT", "").strip()
     if initial_context:
         task = task.model_copy(update={"objective": "\n\n".join((task.objective, f"Initial project brief:\n{initial_context}"))})
@@ -390,6 +395,11 @@ given for that task explicitly.""",
         if recovered_result and recovered_result.status is Status.PASS
         else None
     )
+    if arguments.start_on in {"test", "browser", "visual_review", "completion_audit", "git_publish"}:
+        prior_coding_event = store.latest_passing_coding_event(task.task_id)
+        if prior_coding_event:
+            recovered_result = prior_coding_event.result
+            recovered_event = prior_coding_event
     initial_events = [recovered_event] if recovered_event else []
     initial_results = [recovered_result] if recovered_event else []
     initial_attempts = {"qwen": 1} if recovered_event else {}
@@ -398,7 +408,7 @@ given for that task explicitly.""",
     resume_stage = arguments.start_on or (_retry_stage() if arguments.retry else ("codex_final" if arguments.verify or recovered_event else _resume_stage(previous_state)))
     try:
         with telemetry.run(task, run_id, run_number) as run_span:
-            final_state = create_graph(SupervisorConfig(repo_root=repo_root, dry_run=arguments.dry_run, progress=progress, event_log=event_log, stage_log_path=stage_log_path, checkpoint=checkpoint, progress_heartbeat_seconds=heartbeat_seconds, telemetry=telemetry)).invoke({"task": task, "run_id": run_id, "worker_results": initial_results, "events": initial_events, "attempts": initial_attempts, "active_agent": primary_agent(), "notes": ["Recovered prior Qwen result; starting independent validation."] if recovered_event else [], "resume_stage": resume_stage})
+            final_state = create_graph(SupervisorConfig(repo_root=repo_root, dry_run=arguments.dry_run, progress=progress, event_log=event_log, stage_log_path=stage_log_path, checkpoint=checkpoint, progress_heartbeat_seconds=heartbeat_seconds, telemetry=telemetry)).invoke({"task": task, "run_id": run_id, "worker_results": initial_results, "events": initial_events, "attempts": initial_attempts, "active_agent": primary_agent(), "notes": ["Recovered prior coding result; starting independent validation."] if recovered_event else [], "resume_stage": resume_stage})
             telemetry.complete_run(run_span, final_state["final_status"], final_state["route"], len(final_state["events"]))
     except BaseException as error:
         store.abandon_task(task.task_id, run_id, f"Interrupted during supervisor run: {type(error).__name__}: {error}")
@@ -642,7 +652,7 @@ def _project_database_for_runbook(workspace: Path, runbook: Path, factory_databa
         relative = runbook.resolve().relative_to(workspace.resolve())
     except ValueError:
         return factory_database
-    if relative.parent.name in {"authoring-runbooks", "runbooks"}:
+    if relative.parent.name in {"authoring-runbooks", "game-design-runbooks", "runbooks"}:
         return workspace / ".state" / f"{relative.parent.name}.sqlite3"
     return factory_database
 

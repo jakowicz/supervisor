@@ -410,15 +410,18 @@ def test_initial_document_uses_a_generated_project_brief_when_no_local_initial_e
     assert "Build a task app." in _initial_document(generated_collection)
 
 
-def test_targeted_project_b_or_r_retry_uses_its_child_collection_database(tmp_path: Path):
+def test_targeted_project_child_retry_uses_its_own_collection_database(tmp_path: Path):
     workspace = tmp_path / "projects" / "task-app"
     authoring = workspace / "authoring-runbooks" / "B0002.md"
+    game_design = workspace / "game-design-runbooks" / "GD0001.md"
     product = workspace / "runbooks" / "R0002.md"
     factory = workspace / ".state" / "factory.sqlite3"
     authoring.parent.mkdir(parents=True)
+    game_design.parent.mkdir(parents=True)
     product.parent.mkdir(parents=True)
 
     assert _project_database_for_runbook(workspace, authoring, factory) == workspace / ".state" / "authoring-runbooks.sqlite3"
+    assert _project_database_for_runbook(workspace, game_design, factory) == workspace / ".state" / "game-design-runbooks.sqlite3"
     assert _project_database_for_runbook(workspace, product, factory) == workspace / ".state" / "runbooks.sqlite3"
     assert _project_database_for_runbook(workspace, tmp_path / "runbooks" / "F001.md", factory) == factory
 
